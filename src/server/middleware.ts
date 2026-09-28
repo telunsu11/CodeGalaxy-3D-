@@ -2,7 +2,7 @@ import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable, pipeline } from 'node:stream';
 import { fetchRawFile, fetchRepo, GithubError } from './github';
-import { scanRepo, zhipuChatStream, AiError } from './ai';
+import { scanRepo, llmChatStream, AiError } from './ai';
 import { SUMMARIZE_SYSTEM, summarizeUser } from './prompts';
 
 function json(res: ServerResponse, status: number, body: unknown) {
@@ -63,7 +63,7 @@ export function apiPlugin(): Plugin {
       server.middlewares.use('/api/ai/summarize', async (req, res) => {
         try {
           const { path, repoKey, code } = JSON.parse(await readBody(req)) as Record<string, string>;
-          const stream = await zhipuChatStream([{ role: 'user', content: summarizeUser(path, repoKey, code) }], { system: SUMMARIZE_SYSTEM });
+          const stream = await llmChatStream([{ role: 'user', content: summarizeUser(path, repoKey, code) }], { system: SUMMARIZE_SYSTEM });
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
           // pipeline 保证上游错误被捕获并正常收尾，不会以未捕获 error 事件崩掉 dev server
           pipeline(Readable.fromWeb(stream as never), res, (err) => { if (err) res.end(); });

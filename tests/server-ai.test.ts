@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __clearRepoCache } from '../src/server/github';
-import { scanRepo, zhipuChat, zhipuChatStream } from '../src/server/ai';
+import { scanRepo, llmChat, llmChatStream } from '../src/server/ai';
 
 const JSON_RESP = (body: unknown) => ({ ok: true, json: async () => body } as Response);
 const TEXT_RESP = (body: string) => ({ ok: true, text: async () => body } as Response);
@@ -9,18 +9,42 @@ const OK_JSON = JSON_RESP({ choices: [{ message: { content: '{"score": 3, "reaso
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.ZHIPU_API_KEY;
+  delete process.env.LLM_API_KEY;
+  delete process.env.LLM_BASE_URL;
+  delete process.env.LLM_MODEL;
 });
 
-describe('zhipuChat', () => {
+describe('llmChat', () => {
+  it('LLM_* 变量覆盖端点/密钥/模型，且 key 优先于 ZHIPU_API_KEY', async () => {
+    process.env.LLM_BASE_URL = 'https://api.qiso.io/v1';
+    process.env.LLM_API_KEY = 'third-party-key';
+    process.env.LLM_MODEL = 'gpt-5.6-sol';
+    process.env.ZHIPU_API_KEY = 'zhipu-key-should-lose';
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) => OK_JSON);
+    vi.stubGlobal('fetch', spy);
+    await llmChat([{ role: 'user', content: 'hi' }]);
+    const [url, init] = spy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.qiso.io/v1/chat/completions');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer third-party-key');
+    expect(JSON.parse(init.body as string).model).toBe('gpt-5.6-sol');
+  });
+  it('LLM_BASE_URL 尾部斜杠被规范化', async () => {
+    process.env.LLM_BASE_URL = 'https://api.example.com/v1/';
+    process.env.LLM_API_KEY = 'k';
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) => OK_JSON);
+    vi.stubGlobal('fetch', spy);
+    await llmChat([{ role: 'user', content: 'hi' }]);
+    expect(spy.mock.calls[0]![0]).toBe('https://api.example.com/v1/chat/completions');
+  });
   it('无 key 抛 no_key', async () => {
     delete process.env.ZHIPU_API_KEY;
-    await expect(zhipuChat([{ role: 'user', content: 'hi' }])).rejects.toMatchObject({ code: 'no_key' });
+    await expect(llmChat([{ role: 'user', content: 'hi' }])).rejects.toMatchObject({ code: 'no_key' });
   });
   it('有 key 时携带 Authorization 与默认模型', async () => {
     process.env.ZHIPU_API_KEY = 'test-key';
     const spy = vi.fn(async (_url: string, _init?: RequestInit) => OK_JSON);
     vi.stubGlobal('fetch', spy);
-    await zhipuChat([{ role: 'user', content: 'hi' }]);
+    await llmChat([{ role: 'user', content: 'hi' }]);
     const [url, init] = spy.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('open.bigmodel.cn/api/paas/v4/chat/completions');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-key');
@@ -30,14 +54,14 @@ describe('zhipuChat', () => {
     process.env.ZHIPU_API_KEY = 'k';
     vi.stubGlobal('fetch', vi.fn(async () =>
       JSON_RESP({ choices: [{ message: { content: '结果如下：\n```json\n{"score":2,"reason":"x"}\n```' } }] })));
-    const r = await zhipuChat([{ role: 'user', content: 'x' }], { json: true });
+    const r = await llmChat([{ role: 'user', content: 'x' }], { json: true });
     expect(r).toMatchObject({ score: 2 });
   });
   it('GLM fetch 携带 30s 超时 signal', async () => {
     process.env.ZHIPU_API_KEY = 'k';
     const spy = vi.fn(async (_url: string, _init?: RequestInit) => OK_JSON);
     vi.stubGlobal('fetch', spy);
-    await zhipuChat([{ role: 'user', content: 'hi' }]);
+    await llmChat([{ role: 'user', content: 'hi' }]);
     const init = spy.mock.calls[0]![1] as RequestInit;
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
@@ -45,30 +69,30 @@ describe('zhipuChat', () => {
     process.env.ZHIPU_API_KEY = 'k';
     const HTML = '<html><body>502 Bad Gateway</body></html>';
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => JSON.parse(HTML) } as unknown as Response)));
-    await expect(zhipuChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
+    await expect(llmChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
   });
   it('score 为非数字字符串时抛 AiError(provider)', async () => {
     process.env.ZHIPU_API_KEY = 'k';
     vi.stubGlobal('fetch', vi.fn(async () =>
       JSON_RESP({ choices: [{ message: { content: '{"score": "abc", "reason": "x"}' } }] })));
-    await expect(zhipuChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
+    await expect(llmChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
   });
   it('score 为空字符串时拒绝（不被静默钳到 1）', async () => {
     process.env.ZHIPU_API_KEY = 'k';
     vi.stubGlobal('fetch', vi.fn(async () =>
       JSON_RESP({ choices: [{ message: { content: '{"score": "", "reason": "x"}' } }] })));
-    await expect(zhipuChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
+    await expect(llmChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
   });
   it('score 超出 1-10 时钳位到边界', async () => {
     process.env.ZHIPU_API_KEY = 'k';
     vi.stubGlobal('fetch', vi.fn(async () =>
       JSON_RESP({ choices: [{ message: { content: '{"score": 15, "reason": "还行"}' } }] })));
-    const r = await zhipuChat([{ role: 'user', content: 'x' }], { json: true });
+    const r = await llmChat([{ role: 'user', content: 'x' }], { json: true });
     expect(r).toMatchObject({ score: 10 });
   });
 });
 
-describe('zhipuChatStream', () => {
+describe('llmChatStream', () => {
   it('返回可读的 SSE web stream', async () => {
     process.env.ZHIPU_API_KEY = 'k';
     vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -80,7 +104,7 @@ describe('zhipuChatStream', () => {
         },
       }),
     }) as Response));
-    const stream = await zhipuChatStream([{ role: 'user', content: 'hi' }]);
+    const stream = await llmChatStream([{ role: 'user', content: 'hi' }]);
     const text = await new Response(stream).text();
     expect(text).toContain('data: {"choices"');
   });
@@ -91,7 +115,7 @@ describe('zhipuChatStream', () => {
       body: new ReadableStream({ start(c) { c.close(); } }),
     }) as Response);
     vi.stubGlobal('fetch', spy);
-    await zhipuChatStream([{ role: 'user', content: 'hi' }]);
+    await llmChatStream([{ role: 'user', content: 'hi' }]);
     const init = spy.mock.calls[0]![1] as RequestInit;
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });

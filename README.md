@@ -6,10 +6,18 @@
 
 ```bash
 npm install
-ZHIPU_API_KEY=你的智谱key npm run dev   # AI 功能需要；不配置也能浏览星系
+cp .env.example .env   # 填入你的 LLM API Key（任意 OpenAI 兼容端点）
+npm run dev            # 未配置 key 也能浏览星系，仅 AI 功能不可用
 ```
 
-可选环境变量：`GITHUB_TOKEN`（提高 GitHub API 限额）、`ZHIPU_MODEL`（默认 glm-4.7）。
+环境变量（`.env` 或 shell）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `LLM_BASE_URL` | OpenAI 兼容端点，如 `https://api.qiso.io/v1`（默认智谱） |
+| `LLM_API_KEY` | API 密钥（向后兼容 `ZHIPU_API_KEY`） |
+| `LLM_MODEL` | 模型名（如 `gpt-5.6-sol`；默认 `glm-4.7`） |
+| `GITHUB_TOKEN` | 可选，提高 GitHub API 限额 |
 
 ## 操作
 
@@ -21,7 +29,7 @@ ZHIPU_API_KEY=你的智谱key npm run dev   # AI 功能需要；不配置也能�
 
 ## 架构
 
-数据管道（GitHub Trees API → graph-builder 纯函数）→ Web Worker 内 d3-force-3d 径向分层布局 → R3F 渲染（卫星 InstancedMesh、星云 Points、Bloom）。API 层为 Vite dev-server 中间件，代理 GitHub 与智谱 GLM，密钥不出服务端。详见 `docs/superpowers/`。
+数据管道（GitHub Trees API → graph-builder 纯函数）→ Web Worker 内 d3-force-3d 径向分层布局 → R3F 渲染（卫星 InstancedMesh、星云 Points、Bloom）。API 层为 Vite dev-server 中间件，代理 GitHub 与 LLM（任意 OpenAI 兼容端点），密钥不出服务端。详见 `docs/superpowers/`。
 
 ## 测试
 

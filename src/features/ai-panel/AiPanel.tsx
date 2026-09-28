@@ -73,7 +73,7 @@ export function AiPanel() {
           signal: controller.signal,
         });
         if (seq !== seqRef.current) return;
-        if (sumRes.status === 501) { setAi({ phase: 'error', text: '', error: '未配置 ZHIPU_API_KEY，AI 分析不可用' }); return; }
+        if (sumRes.status === 501) { setAi({ phase: 'error', text: '', error: '未配置 LLM API Key，AI 分析不可用' }); return; }
         if (!sumRes.ok) throw new Error('AI 调用失败');
         await readSse(sumRes, (delta) => {
           if (seq !== seqRef.current) return;

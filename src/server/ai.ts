@@ -4,9 +4,12 @@ import { isIgnored } from '../lib/graph-builder';
 import { fetchRawFile, fetchRepo } from './github';
 import { SCAN_SYSTEM, scanUser } from './prompts';
 
-const ZHIPU_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-const MODEL = () => process.env.ZHIPU_MODEL ?? 'glm-4.7';
-const GLM_TIMEOUT = 30_000;
+// 任意 OpenAI 兼容端点均可：优先 LLM_* 变量，向后兼容 ZHIPU_*（智谱默认值）
+const BASE_URL = () => (process.env.LLM_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4').replace(/\/+$/, '');
+const CHAT_URL = () => `${BASE_URL()}/chat/completions`;
+const API_KEY = () => process.env.LLM_API_KEY ?? process.env.ZHIPU_API_KEY;
+const MODEL = () => process.env.LLM_MODEL ?? process.env.ZHIPU_MODEL ?? 'glm-4.7';
+const LLM_TIMEOUT = 30_000;
 
 export class AiError extends Error {
   code: 'no_key' | 'provider';
@@ -15,12 +18,13 @@ export class AiError extends Error {
 
 export interface ChatMessage { role: 'system' | 'user'; content: string }
 
-export async function zhipuChat(messages: ChatMessage[], opts: { system?: string; json?: boolean; maxTokens?: number } = {}): Promise<string | { score: number; reason: string }> {
-  if (!process.env.ZHIPU_API_KEY) throw new AiError('no_key', '未配置 ZHIPU_API_KEY');
-  const res = await fetch(ZHIPU_URL, {
+export async function llmChat(messages: ChatMessage[], opts: { system?: string; json?: boolean; maxTokens?: number } = {}): Promise<string | { score: number; reason: string }> {
+  const apiKey = API_KEY();
+  if (!apiKey) throw new AiError('no_key', '未配置 LLM_API_KEY（或 ZHIPU_API_KEY）');
+  const res = await fetch(CHAT_URL(), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.ZHIPU_API_KEY}` },
-    signal: AbortSignal.timeout(GLM_TIMEOUT),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(LLM_TIMEOUT),
     body: JSON.stringify({
       model: MODEL(),
       messages: opts.system ? [{ role: 'system', content: opts.system }, ...messages] : messages,
@@ -28,33 +32,34 @@ export async function zhipuChat(messages: ChatMessage[], opts: { system?: string
       max_tokens: opts.maxTokens ?? 512,
     }),
   }).catch(() => null);
-  if (!res || !res.ok) throw new AiError('provider', `GLM 调用失败（${res?.status ?? 'network'}）`);
+  if (!res || !res.ok) throw new AiError('provider', `LLM 调用失败（${res?.status ?? 'network'}）`);
   let data: { choices: Array<{ message: { content: string } }> };
   try {
     data = await res.json() as typeof data;
   } catch {
-    throw new AiError('provider', 'GLM 返回非 JSON 响应');
+    throw new AiError('provider', 'LLM 返回非 JSON 响应');
   }
   const content = data.choices?.[0]?.message?.content ?? '';
   if (!opts.json) return content;
   const m = content.match(/\{[\s\S]*\}/);
-  if (!m) throw new AiError('provider', `GLM 返回非 JSON：${content.slice(0, 80)}`);
+  if (!m) throw new AiError('provider', `LLM 返回非 JSON：${content.slice(0, 80)}`);
   let parsed: { score: number; reason: string };
   try {
     parsed = JSON.parse(m[0]) as typeof parsed;
   } catch {
-    throw new AiError('provider', `GLM 返回非 JSON：${content.slice(0, 80)}`);
+    throw new AiError('provider', `LLM 返回非 JSON：${content.slice(0, 80)}`);
   }
-  if (!Number.isFinite(parsed.score)) throw new AiError('provider', 'GLM 返回 score 非法');
+  if (!Number.isFinite(parsed.score)) throw new AiError('provider', 'LLM 返回 score 非法');
   return { score: Math.min(10, Math.max(1, Math.round(parsed.score))), reason: String(parsed.reason).slice(0, 60) };
 }
 
-export async function zhipuChatStream(messages: ChatMessage[], opts: { system?: string } = {}): Promise<ReadableStream<Uint8Array>> {
-  if (!process.env.ZHIPU_API_KEY) throw new AiError('no_key', '未配置 ZHIPU_API_KEY');
-  const res = await fetch(ZHIPU_URL, {
+export async function llmChatStream(messages: ChatMessage[], opts: { system?: string } = {}): Promise<ReadableStream<Uint8Array>> {
+  const apiKey = API_KEY();
+  if (!apiKey) throw new AiError('no_key', '未配置 LLM_API_KEY（或 ZHIPU_API_KEY）');
+  const res = await fetch(CHAT_URL(), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.ZHIPU_API_KEY}` },
-    signal: AbortSignal.timeout(GLM_TIMEOUT),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(LLM_TIMEOUT),
     body: JSON.stringify({
       model: MODEL(),
       stream: true,
@@ -63,7 +68,7 @@ export async function zhipuChatStream(messages: ChatMessage[], opts: { system?: 
       max_tokens: 384,
     }),
   }).catch(() => null);
-  if (!res || !res.ok || !res.body) throw new AiError('provider', `GLM 流式调用失败（${res?.status ?? 'network'}）`);
+  if (!res || !res.ok || !res.body) throw new AiError('provider', `LLM 流式调用失败（${res?.status ?? 'network'}）`);
   return res.body;
 }
 
@@ -110,7 +115,7 @@ export async function scanRepo(owner: string, repo: string, branch: string): Pro
   if (ranked.length === 0 || ranked[0].heuristics.score === 0) return { verdicts: [], degraded: false };
 
   const judged = await pooled(ranked, SCAN_AI_TOP, async (f) => {
-    const r = await zhipuChat([{ role: 'user', content: scanUser(f.path, f.content) }], { system: SCAN_SYSTEM, json: true }) as { score: number; reason: string };
+    const r = await llmChat([{ role: 'user', content: scanUser(f.path, f.content) }], { system: SCAN_SYSTEM, json: true }) as { score: number; reason: string };
     return { path: f.path, score: r.score, reason: r.reason, heuristics: f.heuristics.score } satisfies ScanVerdict;
   });
 
