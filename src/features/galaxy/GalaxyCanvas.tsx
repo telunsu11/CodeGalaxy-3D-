@@ -7,6 +7,7 @@ import { FocusController } from './FocusController';
 import { CelestialBodies } from './CelestialBodies';
 import { OrbitLinks } from './OrbitLinks';
 import { NebulaPoints } from './NebulaPoints';
+import { CometStreams } from './CometStreams';
 
 export function GalaxyCanvas({ children }: { children?: ReactNode }) {
   return (
@@ -37,6 +38,7 @@ export function GalaxyStage() {
       <CelestialBodies />
       <OrbitLinks />
       <NebulaPoints />
+      <CometStreams />
     </GalaxyCanvas>
   );
 }
