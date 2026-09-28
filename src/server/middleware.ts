@@ -6,6 +6,9 @@ import { scanRepo, llmChatStream, AiError } from './ai';
 import { SUMMARIZE_SYSTEM, summarizeUser } from './prompts';
 
 function json(res: ServerResponse, status: number, body: unknown) {
+  // 防御：流式响应已发送头/体后（如 SSE 已开流再进错误分支），二次写头会以
+  // unhandled rejection 崩掉整个 dev server——此时只能静默收尾
+  if (res.headersSent || res.destroyed) { res.end(); return; }
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.end(JSON.stringify(body));
@@ -65,8 +68,11 @@ export function apiPlugin(): Plugin {
           const { path, repoKey, code } = JSON.parse(await readBody(req)) as Record<string, string>;
           const stream = await llmChatStream([{ role: 'user', content: summarizeUser(path, repoKey, code) }], { system: SUMMARIZE_SYSTEM });
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-          // pipeline 保证上游错误被捕获并正常收尾，不会以未捕获 error 事件崩掉 dev server
-          pipeline(Readable.fromWeb(stream as never), res, (err) => { if (err) res.end(); });
+          const source = Readable.fromWeb(stream as never);
+          // 兜底：GLM 超时 abort 的迟到 error 可能打到已销毁的流上（pipeline 收尾后监听器已移除），
+          // 无监听的 'error' 会崩掉 dev server——空监听吸收所有迟到错误
+          source.on('error', () => {});
+          pipeline(source, res, (err) => { if (err) res.end(); });
         } catch (e) {
           const code = e instanceof AiError ? e.code : 'provider';
           json(res, code === 'no_key' ? 501 : 502, { error: (e as Error).message, code });

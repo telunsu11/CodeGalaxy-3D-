@@ -35,7 +35,10 @@ export function SearchPanel() {
     debounceRef.current = setTimeout(() => setSearchQuery(v), 150);
   };
 
-  // `/` 唤起聚焦、Esc 关闭（输入框外按 / 才触发，避免打断正常输入）
+  // 换仓库时搜索状态随之清空（store 的 searchQuery 由 loadRepo 重置，这里同步本地输入框）
+  useEffect(() => {
+    setText('');
+  }, [graph]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {

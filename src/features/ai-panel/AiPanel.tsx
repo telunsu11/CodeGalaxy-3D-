@@ -20,8 +20,17 @@ export function AiPanel() {
   const graph = useGalaxy((s) => s.graph);
   const setComets = useGalaxy((s) => s.setComets);
   const [ai, setAi] = useState<AiState>({ phase: 'idle', text: '' });
+  const [elapsed, setElapsed] = useState(0); // 等待计时：第三方上游偶发首字 15s+，给用户进度感知
   const seqRef = useRef(0);
   const preRef = useRef<HTMLPreElement>(null);
+
+  // 拉取/流式阶段的等待秒数（每个选中文件重新计时）
+  useEffect(() => {
+    if (selected?.type !== 'moon' || (ai.phase !== 'loading-code' && ai.phase !== 'streaming')) return;
+    setElapsed(0);
+    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [selected?.id, ai.phase]);
 
   // planet 目录统计：按语言名分组（色取该语言代表色），显示"TypeScript ×12"而非纯色点
   const planetStats = useMemo(() => {
@@ -139,8 +148,13 @@ export function AiPanel() {
       {selected.type === 'moon' && (
         <div className="mt-4">
           <div className="flex items-center gap-2 text-xs text-white/50">
-            {ai.phase === 'loading-code' && <span>正在获取源码…</span>}
-            {ai.phase === 'streaming' && <span className="animate-pulse text-sky-300">AI 分析中…</span>}
+            {ai.phase === 'loading-code' && <span>正在获取源码… <span className="tabular-nums text-white/30">{elapsed}s</span></span>}
+            {ai.phase === 'streaming' && (
+              <span className="animate-pulse text-sky-300">
+                {ai.text ? 'AI 输出中…' : 'AI 分析中…（大文件较慢）'}
+                <span className="ml-1 tabular-nums text-white/30">{elapsed}s</span>
+              </span>
+            )}
           </div>
           {ai.text && <pre ref={preRef} className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-emerald-100/90">{ai.text}</pre>}
           {ai.error && <p className="mt-2 text-xs text-rose-400">{ai.error}</p>}

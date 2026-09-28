@@ -58,7 +58,7 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
 
   async loadRepo(owner, repo) {
     const seq = ++loadSeq;
-    set({ status: 'loading', error: null, graph: null, selected: null, hovered: null, comets: [], scan: null, layoutProgress: 0 });
+    set({ status: 'loading', error: null, graph: null, selected: null, hovered: null, comets: [], scan: null, searchQuery: '', layoutProgress: 0 });
     if (cometTimer) { clearTimeout(cometTimer); cometTimer = null; } // 上一仓库的流光清理定时器一并作废
     try {
       const res = await fetch(`/api/repo?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`);

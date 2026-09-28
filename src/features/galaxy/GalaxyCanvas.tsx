@@ -31,8 +31,8 @@ export function GalaxyCanvas({ children }: { children?: ReactNode }) {
 }
 
 export function GalaxyStage() {
-  const status = useGalaxy((s) => s.status);
-  if (status !== 'ready' && status !== 'layout') return null;
+  // Canvas 常驻（idle 也显示深空星空），避免换仓库时整体卸载/重建 WebGL 上下文——
+  // 整树卸载与 drei <Html> 的 DOM portal 清理存在竞态（removeChild 报错），天体子树各自有 ready 门控
   return (
     <GalaxyCanvas>
       <CelestialBodies />

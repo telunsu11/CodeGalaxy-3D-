@@ -9,7 +9,7 @@ const BASE_URL = () => (process.env.LLM_BASE_URL ?? 'https://open.bigmodel.cn/ap
 const CHAT_URL = () => `${BASE_URL()}/chat/completions`;
 const API_KEY = () => process.env.LLM_API_KEY ?? process.env.ZHIPU_API_KEY;
 const MODEL = () => process.env.LLM_MODEL ?? process.env.ZHIPU_MODEL ?? 'glm-4.7';
-const LLM_TIMEOUT = 30_000;
+const LLM_TIMEOUT = 60_000; // 第三方中转偶发慢（首字 15s+ 实测），30s 会腰斩长文件分析
 
 export class AiError extends Error {
   code: 'no_key' | 'provider';
