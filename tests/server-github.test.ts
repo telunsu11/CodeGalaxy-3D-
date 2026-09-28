@@ -34,6 +34,24 @@ describe('fetchRepo', () => {
     vi.stubGlobal('fetch', vi.fn(async () => GH_JSON({ message: 'API rate limit' }, 403)));
     await expect(fetchRepo('a', 'b')).rejects.toMatchObject({ code: 'rate_limited' });
   });
+  it('trees 第二次请求网络中断时抛 network 错误而非裸 TypeError', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/git/trees/')) throw new TypeError('fetch failed');
+      return GH_JSON({ default_branch: 'main' });
+    }));
+    await expect(fetchRepo('a', 'b')).rejects.toMatchObject({ code: 'network' });
+  });
+  it('trees URL 中的分支名需编码（含 ? / 等特殊字符）', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      urls.push(url);
+      if (url.includes('/git/trees/')) return GH_JSON({ truncated: false, tree: [] });
+      return GH_JSON({ default_branch: 'feat/x?2' });
+    }));
+    await fetchRepo('a', 'b');
+    const treesUrl = urls.find((u) => u.includes('/git/trees/'));
+    expect(treesUrl).toContain('feat%2Fx%3F2');
+  });
 });
 
 describe('fetchRawFile', () => {
@@ -42,5 +60,21 @@ describe('fetchRawFile', () => {
     const f = await fetchRawFile('o', 'r', 'main', 'big.ts');
     expect(f.content.length).toBe(51200);
     expect(f.truncated).toBe(true);
+  });
+  it('404 映射为 not_found 且文案指向文件', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => GH_TEXT('Not Found', 404)));
+    await expect(fetchRawFile('o', 'r', 'main', 'src/a.ts')).rejects.toMatchObject({
+      code: 'not_found',
+      message: expect.stringContaining('文件'),
+    });
+  });
+  it('路径中的空格等特殊字符需逐段编码', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      urls.push(url);
+      return GH_TEXT('hi');
+    }));
+    await fetchRawFile('o', 'r', 'main', 'src/my file.ts');
+    expect(urls[0]).toContain('src/my%20file.ts');
   });
 });
