@@ -44,9 +44,8 @@ export async function zhipuChat(messages: ChatMessage[], opts: { system?: string
   } catch {
     throw new AiError('provider', `GLM 返回非 JSON：${content.slice(0, 80)}`);
   }
-  const score = Number(parsed.score);
-  if (Number.isNaN(score)) throw new AiError('provider', 'GLM 返回 score 非法');
-  return { score: Math.min(10, Math.max(1, Math.round(score))), reason: String(parsed.reason).slice(0, 60) };
+  if (!Number.isFinite(parsed.score)) throw new AiError('provider', 'GLM 返回 score 非法');
+  return { score: Math.min(10, Math.max(1, Math.round(parsed.score))), reason: String(parsed.reason).slice(0, 60) };
 }
 
 export async function zhipuChatStream(messages: ChatMessage[], opts: { system?: string } = {}): Promise<ReadableStream<Uint8Array>> {

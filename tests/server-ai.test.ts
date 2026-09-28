@@ -53,6 +53,12 @@ describe('zhipuChat', () => {
       JSON_RESP({ choices: [{ message: { content: '{"score": "abc", "reason": "x"}' } }] })));
     await expect(zhipuChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
   });
+  it('score 为空字符串时拒绝（不被静默钳到 1）', async () => {
+    process.env.ZHIPU_API_KEY = 'k';
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      JSON_RESP({ choices: [{ message: { content: '{"score": "", "reason": "x"}' } }] })));
+    await expect(zhipuChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
+  });
   it('score 超出 1-10 时钳位到边界', async () => {
     process.env.ZHIPU_API_KEY = 'k';
     vi.stubGlobal('fetch', vi.fn(async () =>
