@@ -14,6 +14,20 @@ describe('isIgnored', () => {
     expect(isIgnored('src/App.tsx')).toBe(false);
     expect(isIgnored('src/components')).toBe(false);
   });
+
+  it('嵌套依赖/构建目录同样被过滤（段匹配，非根锚定）', () => {
+    expect(isIgnored('packages/a/node_modules/x.js')).toBe(true);
+    expect(isIgnored('apps/web/dist/main.js')).toBe(true);
+    expect(isIgnored('tools/pkg/build/out.js')).toBe(true);
+    expect(isIgnored('libs/vendor/lib.js')).toBe(true);
+    expect(isIgnored('tests/coverage/x.js')).toBe(true);
+  });
+
+  it('相似名目录不误伤', () => {
+    expect(isIgnored('.github')).toBe(false);
+    expect(isIgnored('.github/workflows/ci.yml')).toBe(false);
+    expect(isIgnored('src/distribute/index.js')).toBe(false);
+  });
 });
 
 describe('buildGraph', () => {
@@ -73,5 +87,47 @@ describe('buildGraph', () => {
     const withSub: TreeEntry[] = [...entries, { path: 'vendor/lib', type: 'commit' }];
     const g = buildGraph(withSub, 'owner/repo');
     expect(g.nodes.some((n) => n.id === 'vendor/lib')).toBe(false);
+  });
+
+  it('空态契约：无条目或全被过滤 → 恰好 1 个 star、0 条边', () => {
+    const empty = buildGraph([], 'o/r');
+    expect(empty.nodes).toHaveLength(1);
+    expect(empty.nodes[0].type).toBe('star');
+    expect(empty.links).toHaveLength(0);
+
+    const allIgnored = buildGraph(
+      [
+        E('node_modules', 'tree'),
+        E('node_modules/x.js', 'blob', 1),
+        E('assets', 'tree'),
+        E('assets/logo.png', 'blob', 2),
+      ],
+      'o/r',
+    );
+    expect(allIgnored.nodes).toHaveLength(1);
+    expect(allIgnored.nodes[0].type).toBe('star');
+    expect(allIgnored.links).toHaveLength(0);
+  });
+
+  it('k 缩减后 overflowCount 按缩减后的 k 计算（目录数 >1250，k 触底为 2）', () => {
+    const many: TreeEntry[] = [];
+    for (let d = 0; d < 1260; d++) {
+      many.push(E(`p${d}`, 'tree'));
+      for (let f = 0; f < 10; f++) many.push(E(`p${d}/f${f}.ts`, 'blob', f));
+    }
+    const g = buildGraph(many, 'o/r');
+    // total = 12600 → k = max(2, ceil(8 * 2500 / 12600)) = 2，每目录保留 2 个 moon
+    expect(g.nodes.filter((n) => n.type === 'moon')).toHaveLength(1260 * 2);
+    const pkg = g.nodes.find((n) => n.id === 'p7')!;
+    expect(pkg.childCount).toBe(10);
+    expect(pkg.overflowCount).toBe(10 - 2);
+  });
+
+  it('同目录全同 size 时 moon 输出序列确定（两次调用一致）', () => {
+    const same: TreeEntry[] = [E('eq', 'tree'), ...Array.from({ length: 12 }, (_, i) => E(`eq/f${i}.ts`, 'blob', 42))];
+    const idsOf = (g: ReturnType<typeof buildGraph>) => g.nodes.filter((n) => n.type === 'moon').map((n) => n.id);
+    expect(idsOf(buildGraph(same, 'o/r'))).toEqual(idsOf(buildGraph(same, 'o/r')));
+    // 稳定排序保持输入顺序，top-8 取前 8 个
+    expect(idsOf(buildGraph(same, 'o/r'))).toEqual(['eq/f0.ts', 'eq/f1.ts', 'eq/f2.ts', 'eq/f3.ts', 'eq/f4.ts', 'eq/f5.ts', 'eq/f6.ts', 'eq/f7.ts']);
   });
 });

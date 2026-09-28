@@ -1,13 +1,16 @@
 import type { GalaxyLink, GalaxyNode, GraphData, TreeEntry } from './types';
 import { colorForPath } from './lang-color';
 
+// 目录名段匹配（(^|\/)name(\/|$)）：命中最少一个完整路径段，
+// 既覆盖根级（node_modules/x.js）也覆盖嵌套（packages/a/node_modules/x.js），
+// 且不误伤相似名（.github、src/distribute）。
 const IGNORE_DIR_PATTERNS = [
-  /^node_modules\//,
+  /(^|\/)node_modules(\/|$)/,
   /(^|\/)\.git(\/|$)/,
-  /^dist\//,
-  /^build\//,
-  /^vendor\//,
-  /^coverage\//,
+  /(^|\/)dist(\/|$)/,
+  /(^|\/)build(\/|$)/,
+  /(^|\/)vendor(\/|$)/,
+  /(^|\/)coverage(\/|$)/,
   /(^|\/)\.next(\/|$)/,
   /(^|\/)\.venv(\/|$)/,
 ];
@@ -22,6 +25,13 @@ const LOCK_FILES = new Set([
 ]);
 
 export const PER_DIR_MOON_LIMIT = 8;
+
+/**
+ * 全局 moon 数量目标。注意这是**软目标**而非硬上限：
+ * 仅当 blob 总数超出时按比例缩减每目录 K，且 K 有下限 2（保住每个目录的最小代表性）。
+ * 因此当目录数 > 1250（1250 × 2 = 2500）时即使 K 触底，moon 总数仍可能超出本值；
+ * 超深/超宽仓库的节点规模届时由 planets 本身的数量主导，属预期行为。
+ */
 export const GLOBAL_MOON_LIMIT = 2500;
 
 export function isIgnored(path: string): boolean {
@@ -42,21 +52,17 @@ function depthOf(path: string): number {
 }
 
 export function buildGraph(entries: TreeEntry[], repoKey: string): GraphData {
-  // 过滤子模块（type === 'commit'）与依赖/构建产物/二进制/lock 文件
-  const kept = entries.filter((e) => e.type !== 'commit' && !isIgnored(e.path));
+  // 只保留未被 ignore 的 blob；'commit'（子模块）与 'tree' 条目不直接产生节点。
+  // tree 条目也不产出 planet——目录节点仅从 blob 的祖先回溯得出，
+  // 保证每个 planet 都有 ≥1 个保留 blob 后代，不产生空 planet。
+  const blobs = entries.filter((e) => e.type === 'blob' && !isIgnored(e.path));
 
   const dirs = new Set<string>();
-  const blobs: TreeEntry[] = [];
-  for (const e of kept) {
-    if (e.type === 'tree') {
-      dirs.add(e.path);
-    } else {
-      blobs.push(e);
-      let p = parentOf(e.path);
-      while (p) {
-        dirs.add(p);
-        p = parentOf(p);
-      }
+  for (const b of blobs) {
+    let p = parentOf(b.path);
+    while (p) {
+      dirs.add(p);
+      p = parentOf(p);
     }
   }
 
