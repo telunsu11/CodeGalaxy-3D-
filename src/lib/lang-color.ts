@@ -12,6 +12,27 @@ const COLORS: Record<string, string> = {
   zig: '#ec915c', ex: '#6e4a7e', exs: '#6e4a7e', hs: '#5e5086', graphql: '#e10098',
 };
 
+/** 扩展名 → 语言显示名（未收录返回 null，由调用方落到"其他"） */
+const LANG_NAMES: Record<string, string> = {
+  ts: 'TypeScript', tsx: 'TypeScript', mts: 'TypeScript',
+  js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript',
+  py: 'Python', rs: 'Rust', go: 'Go', java: 'Java',
+  c: 'C', h: 'C', cpp: 'C++', hpp: 'C++', cc: 'C++', cs: 'C#',
+  rb: 'Ruby', php: 'PHP', swift: 'Swift', kt: 'Kotlin', scala: 'Scala',
+  vue: 'Vue', svelte: 'Svelte',
+  css: 'CSS', scss: 'SCSS', less: 'Less', html: 'HTML',
+  md: 'Markdown', mdx: 'MDX', txt: '文本',
+  json: 'JSON', yml: 'YAML', yaml: 'YAML', toml: 'TOML',
+  sql: 'SQL', sh: 'Shell', bash: 'Shell', lua: 'Lua', dart: 'Dart',
+  zig: 'Zig', ex: 'Elixir', exs: 'Elixir', hs: 'Haskell', graphql: 'GraphQL',
+};
+
+export function langNameForPath(path: string): string | null {
+  const segs = path.split('.');
+  if (segs.length < 2) return null;
+  return LANG_NAMES[segs.pop()!.toLowerCase()] ?? null;
+}
+
 export function colorForPath(path: string): string {
   const segs = path.split('.');
   if (segs.length < 2) return '#7d8590';

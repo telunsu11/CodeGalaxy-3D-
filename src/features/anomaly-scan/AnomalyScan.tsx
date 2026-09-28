@@ -23,7 +23,7 @@ export function AnomalyScan() {
   return (
     <div className="pointer-events-none absolute bottom-0 right-0 z-20 flex w-[22rem] flex-col gap-3 p-4">
       {scan && !scan.running && (
-        <section className="pointer-events-auto max-h-[46vh] overflow-y-auto rounded-xl border border-orange-400/25 bg-black/70 p-4 text-sm backdrop-blur-md">
+        <section className="pointer-events-auto max-h-[46vh] overflow-y-auto rounded-xl border border-white/10 bg-[#0a0e1d]/80 p-4 text-sm shadow-2xl shadow-black/60 backdrop-blur-xl">
           <header className="mb-2 flex items-center justify-between">
             <h3 className="font-semibold text-orange-300">黑洞清单 {holes.length > 0 && <span className="text-orange-200/70">× {holes.length}</span>}</h3>
             <button onClick={clearScan} className="rounded-md border border-white/15 px-2 py-0.5 text-xs text-white/60 hover:border-white/40 hover:text-white">撤销扫描</button>

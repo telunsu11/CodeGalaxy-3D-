@@ -11,6 +11,8 @@ interface GalaxyState {
   graph: GraphData | null;
   truncated: boolean;
   selected: GalaxyNode | null;
+  hovered: GalaxyNode | null; // 悬停天体（tooltip 显示）
+  layoutProgress: number; // 0-1，布局 Worker 增量快照进度
   focus: { id: string; ts: number } | null; // FocusController 监听 ts 变化
   comets: Array<{ from: string; to: string }>;
   scan: (ScanResponse & { running: boolean }) | null;
@@ -18,6 +20,7 @@ interface GalaxyState {
   loadRepo(owner: string, repo: string): Promise<void>;
   applyLayout(coords: Array<{ id: string; x: number; y: number; z: number }>): void;
   selectNode(node: GalaxyNode | null): void;
+  hoverNode(node: GalaxyNode | null): void;
   setComets(comets: Array<{ from: string; to: string }>): void;
   runScan(): Promise<void>;
   clearScan(): void;
@@ -44,13 +47,15 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
   graph: null,
   truncated: false,
   selected: null,
+  hovered: null,
+  layoutProgress: 0,
   focus: null,
   comets: [],
   scan: null,
 
   async loadRepo(owner, repo) {
     const seq = ++loadSeq;
-    set({ status: 'loading', error: null, graph: null, selected: null, comets: [], scan: null });
+    set({ status: 'loading', error: null, graph: null, selected: null, hovered: null, comets: [], scan: null, layoutProgress: 0 });
     if (cometTimer) { clearTimeout(cometTimer); cometTimer = null; } // 上一仓库的流光清理定时器一并作废
     try {
       const res = await fetch(`/api/repo?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`);
@@ -72,11 +77,17 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
       const c = byId.get(n.id);
       return c ? { ...n, x: c.x, y: c.y, z: c.z } : n;
     });
-    set({ graph: { ...g, nodes }, status: 'ready' });
+    set({ graph: { ...g, nodes }, status: 'ready', layoutProgress: 1 });
   },
 
   selectNode(node) {
     set({ selected: node, focus: node ? { id: node.id, ts: Date.now() } : null });
+  },
+
+  hoverNode(node) {
+    const { hovered } = get();
+    if ((node === null) === (hovered === null) && node?.id === hovered?.id) return; // 同对象去抖
+    set({ hovered: node });
   },
 
   setComets(comets) {

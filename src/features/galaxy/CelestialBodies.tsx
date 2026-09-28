@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import { useGalaxy } from '../../app/store';
 import type { GalaxyNode } from '../../lib/types';
 import { BLACK_HOLE_SCORE_MAX } from '../../lib/types';
@@ -10,13 +11,21 @@ export function starRadius(childCount: number): number {
   return Math.max(3, Math.min(13, 2.2 + Math.log2(childCount + 1) * 1.8));
 }
 
+/** 悬停事件公共处理器：进/出天体时更新 tooltip 状态 */
+function hoverProps(node: GalaxyNode) {
+  return {
+    onPointerOver: (e: { stopPropagation: () => void }) => { e.stopPropagation(); useGalaxy.getState().hoverNode(node); },
+    onPointerOut: () => { useGalaxy.getState().hoverNode(null); },
+  };
+}
+
 function StarBody({ node }: { node: GalaxyNode }) {
   const ref = useRef<THREE.Mesh>(null);
   const color = node.langColor === '#7d8590' ? '#ffd28a' : node.langColor;
   useFrame((_, dt) => { if (ref.current) ref.current.rotation.y += dt * 0.12; });
   return (
     <group position={[node.x, node.y, node.z]}>
-      <mesh ref={ref} onClick={(e) => { e.stopPropagation(); useGalaxy.getState().selectNode(node); }}>
+      <mesh ref={ref} onClick={(e) => { e.stopPropagation(); useGalaxy.getState().selectNode(node); }} {...hoverProps(node)}>
         <sphereGeometry args={[14, 48, 48]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={2.6} roughness={0.4} />
       </mesh>
@@ -24,16 +33,29 @@ function StarBody({ node }: { node: GalaxyNode }) {
         <sphereGeometry args={[17.5, 32, 32]} />
         <meshBasicMaterial color={color} transparent opacity={0.14} side={THREE.BackSide} depthWrite={false} />
       </mesh>
+      <Html center distanceFactor={300} position={[0, 20, 0]} className="pointer-events-none select-none" zIndexRange={[10, 0]}>
+        <div className="whitespace-nowrap font-mono text-sm font-semibold text-amber-200/90 drop-shadow-[0_0_6px_rgba(0,0,0,0.9)]">{node.name}</div>
+      </Html>
     </group>
   );
 }
 
 function PlanetBody({ node }: { node: GalaxyNode }) {
   return (
-    <mesh position={[node.x, node.y, node.z]} onClick={(e) => { e.stopPropagation(); useGalaxy.getState().selectNode(node); }}>
-      <sphereGeometry args={[starRadius(node.childCount), 24, 24]} />
-      <meshStandardMaterial color={node.langColor === '#7d8590' ? '#8fa3c8' : node.langColor} roughness={0.75} metalness={0.08} emissive={'#1b2340'} emissiveIntensity={0.5} />
-    </mesh>
+    <group position={[node.x, node.y, node.z]}>
+      <mesh onClick={(e) => { e.stopPropagation(); useGalaxy.getState().selectNode(node); }} {...hoverProps(node)}>
+        <sphereGeometry args={[starRadius(node.childCount), 24, 24]} />
+        <meshStandardMaterial color={node.langColor === '#7d8590' ? '#8fa3c8' : node.langColor} roughness={0.75} metalness={0.08} emissive={'#1b2340'} emissiveIntensity={0.5} />
+      </mesh>
+      {/* 一级目录常显标签（数量少），深层目录靠悬停 tooltip */}
+      {node.depth === 1 && (
+        <Html center distanceFactor={260} position={[0, starRadius(node.childCount) + 5, 0]} className="pointer-events-none select-none" zIndexRange={[10, 0]}>
+          <div className="whitespace-nowrap rounded bg-black/45 px-1.5 py-0.5 font-mono text-[11px] text-white/75 backdrop-blur-[2px]">
+            {node.name} <span className="text-white/35">{node.childCount}</span>
+          </div>
+        </Html>
+      )}
+    </group>
   );
 }
 
@@ -64,8 +86,17 @@ function MoonInstances({ moons, blackHoles }: { moons: GalaxyNode[]; blackHoles:
     if (node) useGalaxy.getState().selectNode(node);
   };
 
+  // InstancedMesh hover：pointerover/out 均携带 instanceId，直接映射到节点
+  const onOver = (e: { stopPropagation: () => void; instanceId: number | null }) => {
+    e.stopPropagation();
+    if (e.instanceId == null) return;
+    const node = visible[e.instanceId];
+    if (node) useGalaxy.getState().hoverNode(node);
+  };
+  const onOut = () => { useGalaxy.getState().hoverNode(null); };
+
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(visible.length, 1)]} onClick={onClick as never}>
+    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(visible.length, 1)]} onClick={onClick as never} onPointerOver={onOver as never} onPointerOut={onOut}>
       <sphereGeometry args={[1.3, 10, 10]} />
       <meshStandardMaterial roughness={0.6} metalness={0.15} emissive={'#0e1526'} emissiveIntensity={0.6} />
     </instancedMesh>

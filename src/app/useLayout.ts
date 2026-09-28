@@ -31,6 +31,7 @@ export function useLayout() {
     worker.onmessage = (e: MessageEvent<LayoutResult>) => {
       if (useGalaxy.getState().status !== 'layout') return;
       latest = e.data.coords;
+      useGalaxy.setState({ layoutProgress: e.data.progress });
       if (e.data.done) {
         clearTimeout(timer);
         applyLayout(e.data.coords);

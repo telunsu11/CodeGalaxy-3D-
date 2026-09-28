@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGalaxy } from '../../app/store';
 import { resolveToNodeId, extractImportSpecifiers } from '../../lib/import-resolver';
+import { langNameForPath } from '../../lib/lang-color';
 import { readSse } from './sse';
 
 type AiState = { phase: 'idle' | 'loading-code' | 'streaming' | 'done' | 'error'; text: string; error?: string };
@@ -22,18 +23,21 @@ export function AiPanel() {
   const seqRef = useRef(0);
   const preRef = useRef<HTMLPreElement>(null);
 
-  // planet 目录统计：遍历 id 前缀匹配的 moon 求总大小、按 langColor 分组计数（同色同语言）
+  // planet 目录统计：按语言名分组（色取该语言代表色），显示"TypeScript ×12"而非纯色点
   const planetStats = useMemo(() => {
     if (!graph || selected?.type !== 'planet') return null;
     const prefix = `${selected.id}/`;
     let totalSize = 0;
-    const langCounts = new Map<string, number>();
+    const langCounts = new Map<string, { count: number; color: string }>();
     for (const n of graph.nodes) {
       if (n.type !== 'moon' || !n.id.startsWith(prefix)) continue;
       totalSize += n.size;
-      langCounts.set(n.langColor, (langCounts.get(n.langColor) ?? 0) + 1);
+      const name = langNameForPath(n.id) ?? '其他';
+      const prev = langCounts.get(name);
+      langCounts.set(name, { count: (prev?.count ?? 0) + 1, color: prev?.color ?? n.langColor });
     }
-    const langs = [...langCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const langs = [...langCounts.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 3)
+      .map(([name, v]) => ({ name, ...v }));
     return { totalSize, langs };
   }, [graph, selected]);
 
@@ -93,31 +97,35 @@ export function AiPanel() {
   if (!selected) return null;
 
   return (
-    <aside className="pointer-events-auto absolute right-0 top-0 z-20 m-4 w-[22rem] rounded-xl border border-white/12 bg-black/70 p-4 font-mono text-sm text-white/90 backdrop-blur-md">
+    <aside className="pointer-events-auto absolute right-0 top-0 z-20 m-4 w-[22rem] rounded-2xl border border-white/10 bg-[#0a0e1d]/80 p-4 font-mono text-sm text-white/90 shadow-2xl shadow-black/60 backdrop-blur-xl">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-400/60 to-transparent" />
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[11px] uppercase tracking-widest text-sky-400/80">
-            {selected.type === 'moon' ? '卫星 · 文件' : selected.type === 'planet' ? '行星 · 目录' : '恒星 · 仓库'}
-          </p>
-          <h2 className="mt-0.5 break-all text-base font-semibold text-white">{selected.name}</h2>
-          <p className="mt-0.5 break-all text-xs text-white/45">{selected.id}</p>
+        <div className="flex items-start gap-2.5">
+          <span className="mt-1 inline-block size-3 shrink-0 rounded-full ring-2 ring-white/20" style={{ backgroundColor: selected.langColor }} />
+          <div>
+            <p className="text-[11px] uppercase tracking-widest text-sky-400/80">
+              {selected.type === 'moon' ? '卫星 · 文件' : selected.type === 'planet' ? '行星 · 目录' : '恒星 · 仓库'}
+            </p>
+            <h2 className="mt-0.5 break-all text-base font-semibold text-white">{selected.name}</h2>
+            <p className="mt-0.5 break-all text-xs text-white/45">{selected.id}</p>
+          </div>
         </div>
-        <button onClick={() => useGalaxy.getState().selectNode(null)} className="rounded-md border border-white/15 px-2 py-0.5 text-xs text-white/60 hover:border-white/40 hover:text-white">关闭</button>
+        <button onClick={() => useGalaxy.getState().selectNode(null)} className="rounded-md border border-white/15 px-2 py-0.5 text-xs text-white/60 transition hover:border-white/40 hover:text-white">关闭</button>
       </div>
 
       {selected.type === 'planet' && (
-        <dl className="mt-4 space-y-1.5 text-xs text-white/70">
-          <div className="flex justify-between"><dt>递归文件数</dt><dd className="text-white">{selected.childCount}</dd></div>
+        <dl className="mt-4 space-y-1.5 rounded-lg border border-white/5 bg-white/[0.03] p-3 text-xs text-white/70">
+          <div className="flex justify-between"><dt>递归文件数</dt><dd className="font-semibold text-white">{selected.childCount}</dd></div>
           <div className="flex justify-between"><dt>聚合为星云</dt><dd className="text-white">{selected.overflowCount} 个文件</dd></div>
           <div className="flex justify-between"><dt>轨道深度</dt><dd className="text-white">L{selected.depth}</dd></div>
           <div className="flex justify-between"><dt>总大小</dt><dd className="text-white">{planetStats ? formatBytes(planetStats.totalSize) : '—'}</dd></div>
           <div className="flex items-center justify-between gap-2">
-            <dt>语言分布</dt>
-            <dd className="flex min-w-0 items-center gap-2">
-              {planetStats && planetStats.langs.length > 0 ? planetStats.langs.map(([color, count]) => (
-                <span key={color} className="flex shrink-0 items-center gap-1 text-white">
-                  <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-                  {count}
+            <dt className="shrink-0">语言分布</dt>
+            <dd className="flex min-w-0 flex-wrap justify-end gap-x-2.5 gap-y-1">
+              {planetStats && planetStats.langs.length > 0 ? planetStats.langs.map((l) => (
+                <span key={l.name} className="flex shrink-0 items-center gap-1.5 text-white">
+                  <span className="inline-block size-2 rounded-full" style={{ backgroundColor: l.color }} />
+                  {l.name}<span className="text-white/40">×{l.count}</span>
                 </span>
               )) : <span className="text-white">—</span>}
             </dd>
