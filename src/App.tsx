@@ -1,3 +1,13 @@
+import { GalaxyStage } from './features/galaxy/GalaxyCanvas';
+import { RepoInput } from './features/repo-input/RepoInput';
+import { useLayout } from './app/useLayout';
+
 export default function App() {
-  return <div className="h-screen w-screen bg-black text-white">CodeGalaxy 3D</div>;
+  useLayout();
+  return (
+    <div className="relative h-screen w-screen overflow-hidden bg-[#03040a] text-white">
+      <GalaxyStage />
+      <RepoInput />
+    </div>
+  );
 }
