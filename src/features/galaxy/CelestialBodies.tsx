@@ -1,6 +1,6 @@
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import { useGalaxy } from '../../app/store';
 import type { GalaxyNode } from '../../lib/types';
@@ -162,6 +162,71 @@ function MoonInstances({ moons, blackHoles, matchedIds }: { moons: GalaxyNode[];
   );
 }
 
+/**
+ * 卫星名称标签（距离驱动）：卫星可达数千，全部常显既糊又拖性能——
+ * 每约 200ms 扫一次相机 100 世界单位内的卫星，取最近 40 个显示；
+ * 选中卫星强制入列。远景（相机远超 100）自然退场，行星标签接管。
+ */
+const MOON_LABEL_RADIUS = 100;
+const MOON_LABEL_MAX = 40;
+
+function MoonLabels() {
+  const camera = useThree((s) => s.camera);
+  const graph = useGalaxy((s) => s.graph);
+  const status = useGalaxy((s) => s.status);
+  const selectedId = useGalaxy((s) => s.selected?.id ?? null);
+  const hoveredId = useGalaxy((s) => s.hovered?.id ?? null);
+  const [ids, setIds] = useState<string[]>([]);
+  const sigRef = useRef('');
+  const tickRef = useRef(0);
+
+  useFrame(() => {
+    if (!graph || status !== 'ready') return;
+    if (++tickRef.current % 12 !== 0) return; // ~5 次/秒，避免每帧排序
+    const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+    const near: Array<{ id: string; d: number }> = [];
+    for (const n of graph.nodes) {
+      if (n.type !== 'moon') continue;
+      const d = (n.x - cx) ** 2 + (n.y - cy) ** 2 + (n.z - cz) ** 2;
+      if (d < MOON_LABEL_RADIUS * MOON_LABEL_RADIUS) near.push({ id: n.id, d });
+    }
+    near.sort((a, b) => a.d - b.d);
+    const next = near.slice(0, MOON_LABEL_MAX).map((x) => x.id);
+    if (selectedId && !next.includes(selectedId)) next.push(selectedId); // 选中强制显示
+    const sig = next.join(',');
+    if (sig !== sigRef.current) { sigRef.current = sig; setIds(next); }
+  });
+
+  const byId = useMemo(() => new Map((graph?.nodes ?? []).map((n) => [n.id, n])), [graph]);
+  return (
+    <group>
+      {ids.map((id) => {
+        const n = byId.get(id);
+        if (!n) return null;
+        const emphasized = id === selectedId || id === hoveredId;
+        return (
+          <Billboard key={id} position={[n.x, n.y + 2, n.z]}>
+            <Text
+              font={LABEL_FONT}
+              fontSize={emphasized ? 2.1 : 1.5}
+              color={emphasized ? '#dff0ff' : '#8b9cc7'}
+              anchorX="center"
+              anchorY="bottom"
+              outlineWidth={0.14}
+              outlineColor="#03040a"
+              material-depthTest={false}
+              material-depthWrite={false}
+              renderOrder={998}
+            >
+              {n.name}
+            </Text>
+          </Billboard>
+        );
+      })}
+    </group>
+  );
+}
+
 export function CelestialBodies() {
   // 注意：所有 hooks（useGalaxy 订阅与 useMemo）必须位于提前 return 之前，保证 hooks 顺序稳定
   const graph = useGalaxy((s) => s.graph);
@@ -185,6 +250,7 @@ export function CelestialBodies() {
       {graph.nodes.filter((n) => n.type === 'star').map((n) => <StarBody key={n.id} node={n} />)}
       {graph.nodes.filter((n) => n.type === 'planet').map((n) => <PlanetBody key={n.id} node={n} matched={matchedIds.has(n.id)} />)}
       <MoonInstances moons={moons} blackHoles={blackHoles} matchedIds={matchedIds} />
+      <MoonLabels />
       <BlackHoles />
     </group>
   );
