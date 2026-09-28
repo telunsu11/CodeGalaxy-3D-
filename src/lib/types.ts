@@ -1,9 +1,9 @@
 export type NodeType = 'star' | 'planet' | 'moon';
 
-/** GitHub git/trees API 的一条记录 */
+/** GitHub git/trees API 的一条记录；'commit' 为子模块 */
 export interface TreeEntry {
   path: string;
-  type: 'blob' | 'tree';
+  type: 'blob' | 'tree' | 'commit';
   size?: number;
 }
 
