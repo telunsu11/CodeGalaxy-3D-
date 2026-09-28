@@ -6,9 +6,11 @@ import { AiPanel } from './features/ai-panel/AiPanel';
 import { AnomalyScan } from './features/anomaly-scan/AnomalyScan';
 import { SearchPanel } from './features/search/SearchPanel';
 import { useLayout } from './app/useLayout';
+import { useUrlSync } from './app/useUrlSync';
 
 export default function App() {
   useLayout();
+  useUrlSync();
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#03040a] text-white">
       {/* 深空氛围：径向星云光晕（纯 CSS，WebGL 画布之下） */}

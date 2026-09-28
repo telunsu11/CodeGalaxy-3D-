@@ -63,6 +63,13 @@ export interface ScanResponse {
   degraded: boolean; // true = GLM 不可用，仅启发式结果
 }
 
+/** 扫描进度事件（SSE）：拉取阶段 → AI 评审阶段 */
+export interface ScanProgress {
+  stage: 'fetch' | 'review';
+  done: number;
+  total: number;
+}
+
 export interface RepoApiResponse {
   meta: RepoMeta;
   entries: TreeEntry[];

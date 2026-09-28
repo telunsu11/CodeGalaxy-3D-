@@ -80,11 +80,21 @@ export function apiPlugin(): Plugin {
       });
 
       server.middlewares.use('/api/ai/scan', async (req, res) => {
+        // SSE：进度事件流式推送（拉取 n/30 → 评审 n/8），末帧为最终结果或错误
         try {
           const { owner, repo, branch } = JSON.parse(await readBody(req)) as Record<string, string>;
-          json(res, 200, await scanRepo(owner, repo, branch));
-        } catch (e) {
-          jsonGithubError(res, e);
+          res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+          const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+          try {
+            const result = await scanRepo(owner, repo, branch, (p) => send({ progress: p }));
+            send({ result });
+          } catch (e) {
+            send({ error: (e as Error).message });
+          }
+          res.end();
+        } catch {
+          if (!res.headersSent) json(res, 502, { error: '请求体非法' });
+          else res.end();
         }
       });
     },

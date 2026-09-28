@@ -43,13 +43,27 @@ export function AnomalyScan() {
           {hiddenCount > 0 && <p className="mt-2 text-xs text-white/45">另有 {hiddenCount} 个异常文件因聚合未在星系中显示</p>}
         </section>
       )}
-      <div className="pointer-events-auto flex justify-end">
+      <div className="pointer-events-auto flex w-full flex-col items-end gap-2">
+        {scan?.running && scan.progress && (
+          <div className="w-56 rounded-xl border border-orange-400/20 bg-[#0a0e1d]/75 px-3 py-2 backdrop-blur-xl">
+            <p className="flex justify-between text-[11px] text-orange-200/80">
+              <span>{scan.progress.stage === 'fetch' ? '拉取可疑文件' : 'AI 评审中'}</span>
+              <span className="tabular-nums">{scan.progress.done}/{scan.progress.total}</span>
+            </p>
+            <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-300 transition-[width] duration-300"
+                style={{ width: `${Math.round(((scan.progress.stage === 'review' ? scan.progress.done / scan.progress.total + 1 : scan.progress.done / scan.progress.total) / 2) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
         <button
           onClick={() => void runScan()}
           disabled={scan?.running}
-          className="rounded-lg border border-orange-400/40 bg-black/60 px-4 py-2 text-sm text-orange-200 backdrop-blur transition hover:bg-orange-500/20 disabled:opacity-50"
+          className="rounded-xl border border-orange-400/40 bg-black/60 px-4 py-2 text-sm text-orange-200 backdrop-blur transition hover:bg-orange-500/20 disabled:opacity-50"
         >
-          {scan?.running ? '扫描中…（拉取 + AI 评审）' : '🕳️ 扫描异常（黑洞巡查）'}
+          {scan?.running ? (scan.progress ? `${scan.progress.stage === 'fetch' ? '拉取' : '评审'} ${scan.progress.done}/${scan.progress.total}…` : '扫描启动中…') : '🕳️ 扫描异常（黑洞巡查）'}
         </button>
       </div>
     </div>

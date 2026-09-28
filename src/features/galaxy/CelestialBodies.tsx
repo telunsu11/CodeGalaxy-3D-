@@ -19,13 +19,22 @@ function hoverProps(node: GalaxyNode) {
   };
 }
 
+/** 双击天体在新标签页打开对应 GitHub 页面（文件→blob、目录/仓库→tree） */
+function openOnGitHub(node: GalaxyNode) {
+  const meta = useGalaxy.getState().meta;
+  if (!meta) return;
+  const kind = node.type === 'moon' ? 'blob' : 'tree';
+  const path = node.type === 'star' ? '' : `/${node.id}`;
+  window.open(`https://github.com/${meta.owner}/${meta.repo}/${kind}/${meta.branch}${path}`, '_blank', 'noopener');
+}
+
 function StarBody({ node }: { node: GalaxyNode }) {
   const ref = useRef<THREE.Mesh>(null);
   const color = node.langColor === '#7d8590' ? '#ffd28a' : node.langColor;
   useFrame((_, dt) => { if (ref.current) ref.current.rotation.y += dt * 0.12; });
   return (
     <group position={[node.x, node.y, node.z]}>
-      <mesh ref={ref} onClick={(e) => { e.stopPropagation(); useGalaxy.getState().selectNode(node); }} {...hoverProps(node)}>
+      <mesh ref={ref} onClick={(e) => { e.stopPropagation(); useGalaxy.getState().selectNode(node); }} onDoubleClick={(e) => { e.stopPropagation(); openOnGitHub(node); }} {...hoverProps(node)}>
         <sphereGeometry args={[14, 48, 48]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={2.6} roughness={0.4} />
       </mesh>
@@ -46,6 +55,7 @@ function PlanetBody({ node, matched }: { node: GalaxyNode; matched: boolean }) {
       <mesh
         scale={matched ? 1.3 : 1}
         onClick={(e) => { e.stopPropagation(); useGalaxy.getState().selectNode(node); }}
+        onDoubleClick={(e) => { e.stopPropagation(); openOnGitHub(node); }}
         {...hoverProps(node)}
       >
         <sphereGeometry args={[starRadius(node.childCount), 24, 24]} />
@@ -113,9 +123,15 @@ function MoonInstances({ moons, blackHoles, matchedIds }: { moons: GalaxyNode[];
     if (node) useGalaxy.getState().hoverNode(node);
   };
   const onOut = () => { useGalaxy.getState().hoverNode(null); };
+  const onDblClick = (e: { stopPropagation: () => void; instanceId: number | null }) => {
+    e.stopPropagation();
+    if (e.instanceId == null) return;
+    const node = visible[e.instanceId];
+    if (node) openOnGitHub(node);
+  };
 
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(visible.length, 1)]} onClick={onClick as never} onPointerOver={onOver as never} onPointerOut={onOut}>
+    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(visible.length, 1)]} onClick={onClick as never} onDoubleClick={onDblClick as never} onPointerOver={onOver as never} onPointerOut={onOut}>
       <sphereGeometry args={[1.3, 10, 10]} />
       <meshStandardMaterial roughness={0.6} metalness={0.15} emissive={'#0e1526'} emissiveIntensity={0.6} />
     </instancedMesh>

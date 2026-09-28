@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { GalaxyNode, GraphData, RepoApiResponse, ScanResponse } from '../lib/types';
+import type { GalaxyNode, GraphData, RepoApiResponse, ScanProgress, ScanResponse } from '../lib/types';
 import { buildGraph } from '../lib/graph-builder';
+import { readSseEvents } from '../features/ai-panel/sse';
 
 export type LoadStatus = 'idle' | 'loading' | 'layout' | 'ready' | 'error';
 
@@ -16,7 +17,7 @@ interface GalaxyState {
   layoutProgress: number; // 0-1，布局 Worker 增量快照进度
   focus: { id: string; ts: number } | null; // FocusController 监听 ts 变化
   comets: Array<{ from: string; to: string }>;
-  scan: (ScanResponse & { running: boolean }) | null;
+  scan: (ScanResponse & { running: boolean; progress: ScanProgress | null }) | null;
 
   loadRepo(owner: string, repo: string): Promise<void>;
   applyLayout(coords: Array<{ id: string; x: number; y: number; z: number }>): void;
@@ -110,17 +111,28 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
     if (get().scan?.running) return; // 防重入：程序化调用并发双扫描守卫
     const { meta } = get();
     if (!meta) return;
-    set({ scan: { verdicts: [], degraded: false, running: true } });
+    set({ scan: { verdicts: [], degraded: false, running: true, progress: null } });
     try {
       const res = await fetch('/api/ai/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ owner: meta.owner, repo: meta.repo, branch: meta.branch }),
       });
-      const data = await res.json() as ScanResponse & { error?: string };
-      if (!res.ok) throw new Error(data.error ?? '扫描失败');
-      if (get().meta !== meta) return; // 扫描期间换了仓库，旧结果丢弃
-      set({ scan: { ...data, running: false } });
+      if (!res.ok) throw new Error('扫描请求失败');
+      // SSE 事件流：progress 增量更新，result 收尾
+      await readSseEvents(res, (payload) => {
+        let evt: { progress?: ScanProgress; result?: ScanResponse; error?: string };
+        try { evt = JSON.parse(payload) as typeof evt; } catch { return; }
+        if (evt.error) throw new Error(evt.error);
+        if (evt.progress && get().meta === meta) {
+          set({ scan: { verdicts: [], degraded: false, running: true, progress: evt.progress } });
+        }
+        if (evt.result && get().meta === meta) {
+          set({ scan: { ...evt.result, running: false, progress: null } });
+        }
+      });
+      if (get().meta !== meta) return;
+      if (get().scan?.running) set({ scan: { verdicts: [], degraded: true, running: false, progress: null } }); // 流结束但没收到 result（中途断流）
     } catch (e) {
       if (get().meta !== meta) return;
       // degraded 语义留给服务端降级响应；请求失败只清空扫描态并报错

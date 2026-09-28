@@ -147,13 +147,53 @@ describe('runScan（守卫与降级语义）', () => {
 
   it('扫描期间换仓库：旧扫描结果被丢弃', async () => {
     useGalaxy.setState({ meta: meta('r') });
+    const frames = [
+      'data: {"progress":{"stage":"fetch","done":1,"total":3}}',
+      'data: {"result":{"verdicts":[{"path":"x","score":5,"reason":"","heuristics":0}],"degraded":false}}',
+      '',
+    ].join('\n\n');
     let resolveScan!: (v: unknown) => void;
     vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => { resolveScan = r; })));
     const p = useGalaxy.getState().runScan();
     // 模拟用户切换仓库（loadRepo 成功路径会重置 scan 并替换 meta）
     useGalaxy.setState({ meta: meta('r2'), scan: null });
-    resolveScan({ ok: true, json: async () => ({ verdicts: [{ path: 'x', score: 5, reason: '', heuristics: 0 }], degraded: false }) });
+    resolveScan({ ok: true, body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(frames)); c.close(); } }) });
     await p;
-    expect(useGalaxy.getState().scan).toBeNull(); // 旧结果未写入
+    expect(useGalaxy.getState().scan).toBeNull(); // 旧结果未写入（meta 守卫丢弃）
+  });
+
+  it('SSE 正常路径：progress 增量更新、result 收尾 running=false', async () => {
+    useGalaxy.setState({ meta: meta('r') });
+    const frames = [
+      'data: {"progress":{"stage":"fetch","done":2,"total":30}}',
+      'data: {"progress":{"stage":"review","done":1,"total":8}}',
+      'data: {"result":{"verdicts":[{"path":"a.ts","score":2,"reason":"烂","heuristics":40}],"degraded":false}}',
+      '',
+    ].join('\n\n');
+    const progressSeen: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(frames)); c.close(); } }),
+    }) as Response));
+    const unsub = useGalaxy.subscribe((s) => { if (s.scan?.progress) progressSeen.push(`${s.scan.progress!.stage}:${s.scan.progress!.done}`); });
+    await useGalaxy.getState().runScan();
+    unsub();
+    const s = useGalaxy.getState();
+    expect(s.scan?.running).toBe(false);
+    expect(s.scan?.verdicts).toEqual([{ path: 'a.ts', score: 2, reason: '烂', heuristics: 40 }]);
+    expect(progressSeen).toContain('fetch:2');
+    expect(progressSeen).toContain('review:1');
+  });
+
+  it('SSE 错误事件：清空扫描态并写入 error', async () => {
+    useGalaxy.setState({ meta: meta('r') });
+    const frames = 'data: {"error":"上游挂了"}\n\n';
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(frames)); c.close(); } }),
+    }) as Response));
+    await useGalaxy.getState().runScan();
+    expect(useGalaxy.getState().scan).toBeNull();
+    expect(useGalaxy.getState().error).toBe('上游挂了');
   });
 });

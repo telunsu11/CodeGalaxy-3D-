@@ -1,4 +1,4 @@
-import type { ScanResponse, ScanVerdict, TreeEntry } from '../lib/types';
+import type { ScanProgress, ScanResponse, ScanVerdict, TreeEntry } from '../lib/types';
 import { CODE_EXT, heuristicScore } from '../lib/heuristics';
 import { isIgnored } from '../lib/graph-builder';
 import { fetchRawFile, fetchRepo } from './github';
@@ -92,7 +92,7 @@ const SCAN_AI_TOP = 8;
 const SCAN_FETCH_LIMIT = 5;
 const SCAN_FILE_TRUNCATE = 30_000;
 
-export async function scanRepo(owner: string, repo: string, branch: string): Promise<ScanResponse> {
+export async function scanRepo(owner: string, repo: string, branch: string, onProgress?: (p: ScanProgress) => void): Promise<ScanResponse> {
   const { entries } = await fetchRepo(owner, repo);
   // 过滤链与 graph-builder 的 buildGraph 对齐（isIgnored）：dist/vendor/node_modules/锁文件/二进制
   // 不进候选，否则 verdict 指向图中不存在的节点，清单死条目点击无反馈
@@ -101,10 +101,12 @@ export async function scanRepo(owner: string, repo: string, branch: string): Pro
     .sort((a, b) => (b.size ?? 0) - (a.size ?? 0))
     .slice(0, SCAN_TOP_N);
 
-  const contents = await pooled(codeFiles, SCAN_FETCH_LIMIT, async (e) => ({
-    path: e.path,
-    content: (await fetchRawFile(owner, repo, branch, e.path)).content.slice(0, SCAN_FILE_TRUNCATE),
-  }));
+  let fetched = 0;
+  const contents = await pooled(codeFiles, SCAN_FETCH_LIMIT, async (e) => {
+    const r = await fetchRawFile(owner, repo, branch, e.path);
+    onProgress?.({ stage: 'fetch', done: ++fetched, total: codeFiles.length });
+    return { path: e.path, content: r.content.slice(0, SCAN_FILE_TRUNCATE) };
+  });
   const files = contents.flatMap((r) => (r.ok ? [r.value] : []));
 
   const ranked = files
@@ -114,8 +116,10 @@ export async function scanRepo(owner: string, repo: string, branch: string): Pro
 
   if (ranked.length === 0 || ranked[0].heuristics.score === 0) return { verdicts: [], degraded: false };
 
+  let reviewed = 0;
   const judged = await pooled(ranked, SCAN_AI_TOP, async (f) => {
     const r = await llmChat([{ role: 'user', content: scanUser(f.path, f.content) }], { system: SCAN_SYSTEM, json: true }) as { score: number; reason: string };
+    onProgress?.({ stage: 'review', done: ++reviewed, total: ranked.length });
     return { path: f.path, score: r.score, reason: r.reason, heuristics: f.heuristics.score } satisfies ScanVerdict;
   });
 
