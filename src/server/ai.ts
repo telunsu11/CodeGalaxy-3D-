@@ -1,5 +1,6 @@
 import type { ScanResponse, ScanVerdict, TreeEntry } from '../lib/types';
 import { CODE_EXT, heuristicScore } from '../lib/heuristics';
+import { isIgnored } from '../lib/graph-builder';
 import { fetchRawFile, fetchRepo } from './github';
 import { SCAN_SYSTEM, scanUser } from './prompts';
 
@@ -88,8 +89,10 @@ const SCAN_FILE_TRUNCATE = 30_000;
 
 export async function scanRepo(owner: string, repo: string, branch: string): Promise<ScanResponse> {
   const { entries } = await fetchRepo(owner, repo);
+  // 过滤链与 graph-builder 的 buildGraph 对齐（isIgnored）：dist/vendor/node_modules/锁文件/二进制
+  // 不进候选，否则 verdict 指向图中不存在的节点，清单死条目点击无反馈
   const codeFiles = (entries as TreeEntry[])
-    .filter((e) => e.type === 'blob' && CODE_EXT.has(e.path.split('.').pop()?.toLowerCase() ?? ''))
+    .filter((e) => e.type === 'blob' && CODE_EXT.has(e.path.split('.').pop()?.toLowerCase() ?? '') && !isIgnored(e.path))
     .sort((a, b) => (b.size ?? 0) - (a.size ?? 0))
     .slice(0, SCAN_TOP_N);
 

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useGalaxy } from '../../app/store';
 import type { GalaxyNode } from '../../lib/types';
+import { BLACK_HOLE_SCORE_MAX } from '../../lib/types';
 import { BlackHoles } from './BlackHole';
 
 export function starRadius(childCount: number): number {
@@ -78,7 +79,7 @@ export function CelestialBodies() {
   const scan = useGalaxy((s) => s.scan);
   // useMemo 稳定引用：否则每次渲染 new Set/新数组会让 MoonInstances 的 visible 重算、useLayoutEffect 无谓重跑
   const blackHoles = useMemo(
-    () => new Set((scan?.verdicts ?? []).filter((v) => v.score <= 4).map((v) => v.path)),
+    () => new Set((scan?.verdicts ?? []).filter((v) => v.score <= BLACK_HOLE_SCORE_MAX).map((v) => v.path)),
     [scan],
   );
   const moons = useMemo(() => (graph?.nodes ?? []).filter((n) => n.type === 'moon'), [graph]);

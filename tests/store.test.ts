@@ -134,6 +134,17 @@ describe('runScan（守卫与降级语义）', () => {
     expect(s.error).toBe('boom');
   });
 
+  it('防重入：running 中的二次调用直接返回，不重复发请求', async () => {
+    useGalaxy.setState({ meta: meta('r') });
+    const fetchMock = vi.fn(() => new Promise(() => {})); // 永不 resolve，保持 running 态
+    vi.stubGlobal('fetch', fetchMock);
+    void useGalaxy.getState().runScan(); // 第一次：进入 running
+    expect(useGalaxy.getState().scan?.running).toBe(true);
+    await useGalaxy.getState().runScan(); // 第二次：守卫直接返回
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(useGalaxy.getState().scan?.running).toBe(true); // 状态未被二次调用破坏
+  });
+
   it('扫描期间换仓库：旧扫描结果被丢弃', async () => {
     useGalaxy.setState({ meta: meta('r') });
     let resolveScan!: (v: unknown) => void;

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useGalaxy } from '../../app/store';
 import type { GalaxyNode } from '../../lib/types';
+import { BLACK_HOLE_SCORE_MAX } from '../../lib/types';
 
 const DISK_VERT = /* glsl */ `
   varying vec2 vUv;
@@ -60,7 +61,7 @@ export function BlackHoles() {
   const graph = useGalaxy((s) => s.graph);
   const scan = useGalaxy((s) => s.scan);
   if (!graph || !scan) return null;
-  const holeIds = new Set(scan.verdicts.filter((v) => v.score <= 4).map((v) => v.path));
+  const holeIds = new Set(scan.verdicts.filter((v) => v.score <= BLACK_HOLE_SCORE_MAX).map((v) => v.path));
   return (
     <group>
       {graph.nodes.filter((n) => n.type === 'moon' && holeIds.has(n.id)).map((n) => <BlackHole key={n.id} node={n} />)}

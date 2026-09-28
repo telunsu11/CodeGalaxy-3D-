@@ -149,6 +149,33 @@ describe('scanRepo 降级', () => {
     expect(byPath.get('c.js')).toMatchObject({ score: 4, reason: 'GLM-c.js-劣质' });
   });
 
+  it('isIgnored 对齐：dist/node_modules/锁文件即使最大也不进候选（无 raw/GLM 请求、无 verdict）', async () => {
+    process.env.ZHIPU_API_KEY = 'k';
+    __clearRepoCache();
+    const rawPaths: string[] = [];
+    const glmBodies: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('git/trees')) return JSON_RESP({
+        truncated: false,
+        tree: [
+          { path: 'dist/bundle.js', type: 'blob', size: 500000 }, // 全树最大，但 isIgnored 应过滤（图中无节点，verdict 会成死条目）
+          { path: 'node_modules/lodash/index.js', type: 'blob', size: 400000 },
+          { path: 'package-lock.json', type: 'blob', size: 300000 },
+          { path: 'src/app.ts', type: 'blob', size: 5000 },
+        ],
+      });
+      if (url.includes('raw.githubusercontent')) { rawPaths.push(url); return TEXT_RESP('// TODO: fix\n'.repeat(10)); }
+      if (url.includes('api.github.com/repos/')) return JSON_RESP({ default_branch: 'main', stargazers_count: 0, description: '', language: null });
+      glmBodies.push(String(init?.body ?? ''));
+      return JSON_RESP({ choices: [{ message: { content: '{"score": 2, "reason": "劣质"}' } }] });
+    }));
+    const r = await scanRepo('o', 'r', 'main');
+    expect(r.verdicts.map((v) => v.path)).toEqual(['src/app.ts']); // 仅图中存在的文件拿到 verdict
+    expect(rawPaths.some((u) => u.includes('bundle.js') || u.includes('lodash') || u.includes('package-lock'))).toBe(false);
+    expect(glmBodies.join('\n')).not.toContain('dist/');
+    expect(glmBodies.length).toBe(1); // GLM 只评审了 src/app.ts
+  });
+
   it('全零短路：内容干净时 verdicts 为空且 GLM 零调用', async () => {
     process.env.ZHIPU_API_KEY = 'k';
     __clearRepoCache();

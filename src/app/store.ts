@@ -88,6 +88,7 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
   },
 
   async runScan() {
+    if (get().scan?.running) return; // 防重入：程序化调用并发双扫描守卫
     const { meta } = get();
     if (!meta) return;
     set({ scan: { verdicts: [], degraded: false, running: true } });

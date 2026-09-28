@@ -1,5 +1,8 @@
 export type NodeType = 'star' | 'planet' | 'moon';
 
+/** 黑洞判定阈值：verdict.score ≤ 此值的文件渲染为黑洞（AnomalyScan / CelestialBodies / BlackHole 三处共用，防漂移） */
+export const BLACK_HOLE_SCORE_MAX = 4;
+
 /** GitHub git/trees API 的一条记录；'commit' 为子模块 */
 export interface TreeEntry {
   path: string;
