@@ -34,7 +34,12 @@ function Comet({ from, to, born }: { from: string; to: string; born: number }) {
 
   useFrame(() => {
     const t = (performance.now() - born) / 1000;
-    if (t > LIFETIME) return;
+    if (t > LIFETIME) {
+      const m = lineRef.current?.material as THREE.LineBasicMaterial | undefined;
+      if (m) m.opacity = 0;
+      if (dotRef.current) (dotRef.current.material as THREE.MeshBasicMaterial).opacity = 0;
+      return;
+    }
     const fade = 1 - t / LIFETIME;
     const lineMat = lineRef.current?.material as THREE.LineBasicMaterial | undefined;
     if (lineMat) lineMat.opacity = 0.85 * fade;

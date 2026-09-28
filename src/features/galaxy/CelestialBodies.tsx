@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useGalaxy } from '../../app/store';
 import type { GalaxyNode } from '../../lib/types';
+import { BlackHoles } from './BlackHole';
 
 export function starRadius(childCount: number): number {
   return Math.max(3, Math.min(13, 2.2 + Math.log2(childCount + 1) * 1.8));
@@ -87,6 +88,7 @@ export function CelestialBodies() {
       {graph.nodes.filter((n) => n.type === 'star').map((n) => <StarBody key={n.id} node={n} />)}
       {graph.nodes.filter((n) => n.type === 'planet').map((n) => <PlanetBody key={n.id} node={n} />)}
       <MoonInstances moons={moons} blackHoles={blackHoles} />
+      <BlackHoles />
     </group>
   );
 }

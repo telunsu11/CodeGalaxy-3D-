@@ -1,6 +1,7 @@
 import { GalaxyStage } from './features/galaxy/GalaxyCanvas';
 import { RepoInput } from './features/repo-input/RepoInput';
 import { AiPanel } from './features/ai-panel/AiPanel';
+import { AnomalyScan } from './features/anomaly-scan/AnomalyScan';
 import { useLayout } from './app/useLayout';
 
 export default function App() {
@@ -10,6 +11,7 @@ export default function App() {
       <GalaxyStage />
       <RepoInput />
       <AiPanel />
+      <AnomalyScan />
     </div>
   );
 }
