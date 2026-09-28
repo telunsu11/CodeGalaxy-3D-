@@ -73,7 +73,7 @@ export async function llmChatStream(messages: ChatMessage[], opts: { system?: st
 }
 
 /** 并发池：错误不打断其他任务 */
-async function pooled<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<Array<{ ok: true; value: R } | { ok: false; error: unknown }>> {
+export async function pooled<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<Array<{ ok: true; value: R } | { ok: false; error: unknown }>> {
   const results: Array<{ ok: true; value: R } | { ok: false; error: unknown }> = new Array(items.length);
   let i = 0;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {

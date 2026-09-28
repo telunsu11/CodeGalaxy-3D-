@@ -6,6 +6,8 @@ import { langNameForPath } from '../../lib/lang-color';
 export function GalaxyHud() {
   const graph = useGalaxy((s) => s.graph);
   const status = useGalaxy((s) => s.status);
+  const deps = useGalaxy((s) => s.deps);
+  const toggleDeps = useGalaxy((s) => s.toggleDeps);
 
   const langs = useMemo(() => {
     if (!graph) return [];
@@ -40,8 +42,26 @@ export function GalaxyHud() {
           </ul>
         </div>
       )}
+      <div className="pointer-events-auto">
+        <button
+          onClick={() => void toggleDeps()}
+          disabled={deps?.loading}
+          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-xs backdrop-blur-xl transition disabled:opacity-60 ${
+            deps && !deps.loading
+              ? 'border-violet-400/50 bg-violet-500/15 text-violet-200'
+              : 'border-white/10 bg-[#0a0e1d]/70 text-white/60 hover:border-violet-400/40 hover:text-violet-200'
+          }`}
+        >
+          <span className="text-sm leading-none">⇄</span>
+          {deps?.loading
+            ? '解析依赖中…（拉取源码）'
+            : deps
+              ? `依赖全景 · ${deps.edges.length} 条 import 连线（点击关闭）`
+              : '依赖全景（解析核心文件的 import）'}
+        </button>
+      </div>
       <p className="pl-1 text-[11px] tracking-wide text-white/30">
-        拖拽旋转 · 滚轮缩放 · 悬停查看 · 点击聚焦
+        拖拽旋转 · 滚轮缩放 · 悬停查看 · 点击聚焦 · 双击开 GitHub
       </p>
     </div>
   );

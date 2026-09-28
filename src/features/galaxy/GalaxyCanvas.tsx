@@ -8,6 +8,7 @@ import { CelestialBodies } from './CelestialBodies';
 import { OrbitLinks } from './OrbitLinks';
 import { NebulaPoints } from './NebulaPoints';
 import { CometStreams } from './CometStreams';
+import { DepLinks } from './DepLinks';
 
 export function GalaxyCanvas({ children }: { children?: ReactNode }) {
   return (
@@ -37,6 +38,7 @@ export function GalaxyStage() {
     <GalaxyCanvas>
       <CelestialBodies />
       <OrbitLinks />
+      <DepLinks />
       <NebulaPoints />
       <CometStreams />
     </GalaxyCanvas>

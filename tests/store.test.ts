@@ -39,6 +39,7 @@ const graph = (ids: string[]): GraphData => ({
   nodes: ids.map(node),
   links: ids.slice(1).map((id, i) => ({ source: ids[i], target: id })),
   truncated: false,
+  overflowFiles: {},
 });
 
 const meta = (repo: string): RepoMeta => ({
@@ -121,6 +122,54 @@ describe('loadRepo（竞态守卫）', () => {
     await pA;
     expect(useGalaxy.getState().status).toBe('layout'); // 未进入 error
     expect(useGalaxy.getState().error).toBeNull();
+  });
+});
+
+describe('expandDir / collapseDir（行星展开）', () => {
+  const planetGraph = (): GraphData => ({
+    nodes: [
+      { id: 'pkg', name: 'pkg', type: 'planet', depth: 1, size: 0, langColor: '#8fa3c8', childCount: 10, overflowCount: 2, x: 5, y: 5, z: 5 },
+      node('pkg/kept.ts'),
+    ],
+    links: [{ source: 'pkg', target: 'pkg/kept.ts' }],
+    truncated: false,
+    overflowFiles: { pkg: [{ path: 'pkg/hidden1.ts', size: 7 }, { path: 'pkg/hidden2.ts', size: 8 }] },
+  });
+
+  it('展开：聚合文件化作 expanded 卫星并连边（球壳坐标在行星附近）', () => {
+    useGalaxy.setState({ graph: planetGraph() });
+    useGalaxy.getState().expandDir('pkg');
+    const g = useGalaxy.getState().graph!;
+    const added = g.nodes.filter((n) => n.expanded);
+    expect(added.map((n) => n.id).sort()).toEqual(['pkg/hidden1.ts', 'pkg/hidden2.ts']);
+    expect(g.links).toContainEqual({ source: 'pkg', target: 'pkg/hidden1.ts' });
+    for (const n of added) {
+      const d = Math.hypot(n.x - 5, n.y - 5, n.z - 5);
+      expect(d).toBeGreaterThan(6); // 球壳分布：不在行星球心
+      expect(d).toBeLessThan(24);
+    }
+  });
+
+  it('重复展开是幂等的', () => {
+    useGalaxy.setState({ graph: planetGraph() });
+    useGalaxy.getState().expandDir('pkg');
+    useGalaxy.getState().expandDir('pkg');
+    expect(useGalaxy.getState().graph!.nodes.filter((n) => n.expanded)).toHaveLength(2);
+  });
+
+  it('收起：移除 expanded 节点与其边，保留原有节点', () => {
+    useGalaxy.setState({ graph: planetGraph() });
+    useGalaxy.getState().expandDir('pkg');
+    useGalaxy.getState().collapseDir('pkg');
+    const g = useGalaxy.getState().graph!;
+    expect(g.nodes.map((n) => n.id)).toEqual(['pkg', 'pkg/kept.ts']);
+    expect(g.links).toEqual([{ source: 'pkg', target: 'pkg/kept.ts' }]);
+  });
+
+  it('无聚合文件或目录不存在时安全 no-op', () => {
+    useGalaxy.setState({ graph: planetGraph() });
+    useGalaxy.getState().expandDir('nonexistent');
+    expect(useGalaxy.getState().graph!.nodes).toHaveLength(2);
   });
 });
 

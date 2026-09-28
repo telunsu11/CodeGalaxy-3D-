@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { parseRepoInput, useGalaxy } from '../../app/store';
+import { getRecent, removeRecent, pushRecent } from './recent';
 
 const EXAMPLES = [
   { label: 'vuejs/pinia', owner: 'vuejs', repo: 'pinia' },
@@ -16,13 +17,17 @@ export function RepoInput() {
   const truncated = useGalaxy((s) => s.truncated);
   const layoutProgress = useGalaxy((s) => s.layoutProgress);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [recent, setRecent] = useState(() => getRecent());
 
   const busy = status === 'loading' || status === 'layout';
 
   const submit = (owner: string, repo: string) => {
     setLocalError(null);
+    setRecent(pushRecent(owner, repo));
     void loadRepo(owner, repo);
   };
+
+  const dropRecent = (owner: string, repo: string) => setRecent(removeRecent(owner, repo));
 
   return (
     <div className="pointer-events-none absolute left-0 top-0 z-20 flex w-full flex-col items-start gap-2.5 p-4">
@@ -61,13 +66,26 @@ export function RepoInput() {
             <p className="mt-1 text-right font-mono text-[10px] tabular-nums text-white/40">引力布局 {Math.round(layoutProgress * 100)}%</p>
           </div>
         )}
-        <div className="mt-2.5 flex flex-wrap gap-1.5 pl-0.5 text-[11px] text-white/45">
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pl-0.5 text-[11px] text-white/45">
           {EXAMPLES.map((ex) => (
             <button key={ex.label} onClick={() => submit(ex.owner, ex.repo)} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 font-mono transition hover:border-sky-400/40 hover:bg-sky-400/10 hover:text-white">
               {ex.label}
             </button>
           ))}
         </div>
+        {recent.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-0.5 text-[11px]">
+            <svg className="size-3 text-white/25" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" strokeLinecap="round" /></svg>
+            {recent.slice(0, 4).map((r) => (
+              <span key={`${r.owner}/${r.repo}`} className="group relative inline-flex items-center rounded-full border border-white/8 bg-white/[0.02] font-mono text-white/40 transition hover:border-violet-400/40 hover:text-white/80">
+                <button onClick={() => submit(r.owner, r.repo)} className="px-2.5 py-0.5">{r.owner}/{r.repo}</button>
+                <button onClick={() => dropRecent(r.owner, r.repo)} title="移除记录" className="mr-1 hidden size-3 items-center justify-center rounded-full text-white/40 hover:text-rose-300 group-hover:flex">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="size-2.5"><path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" /></svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         {localError && <p className="mt-2 pl-1 text-xs text-rose-400">{localError}</p>}
         {error && !localError && <p className="mt-2 pl-1 text-xs text-rose-400">{error}</p>}
         {truncated && status === 'ready' && <p className="mt-2 pl-1 text-xs text-amber-300/80">仓库过大，GitHub 树被截断，已部分渲染</p>}

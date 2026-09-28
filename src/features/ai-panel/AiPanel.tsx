@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGalaxy } from '../../app/store';
+import type { GalaxyNode } from '../../lib/types';
 import { resolveToNodeId, extractImportSpecifiers } from '../../lib/import-resolver';
 import { langNameForPath } from '../../lib/lang-color';
 import { readSse } from './sse';
@@ -12,6 +13,44 @@ function formatBytes(bytes: number): string {
   const kb = bytes / 1024;
   if (kb < 1024) return `${kb.toFixed(1)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+/** 面包屑：祖先链（目录/仓库根可点击聚焦，末段为自身） */
+function Breadcrumb({ node }: { node: GalaxyNode }) {
+  const graph = useGalaxy((s) => s.graph);
+  if (!graph) return null;
+  const meta = useGalaxy.getState().meta;
+  const segs: Array<{ label: string; id: string | null }> = [];
+  if (meta) segs.push({ label: meta.repo, id: `repo:${meta.owner}/${meta.repo}` });
+  if (node.type !== 'star') {
+    const parts = node.id.split('/');
+    parts.forEach((part, i) => {
+      segs.push({ label: part, id: i === parts.length - 1 ? node.id : parts.slice(0, i + 1).join('/') });
+    });
+  }
+  return (
+    <nav className="mt-0.5 flex flex-wrap items-center gap-0.5 text-xs">
+      {segs.map((s, i) => {
+        const isSelf = s.id === node.id && node.type !== 'star';
+        const target = s.id ? graph.nodes.find((n) => n.id === s.id) : undefined;
+        return (
+          <span key={i} className="flex items-center gap-0.5">
+            {i > 0 && <span className="text-white/20">/</span>}
+            {isSelf || !target ? (
+              <span className="text-white/45">{s.label}</span>
+            ) : (
+              <button
+                onClick={() => useGalaxy.getState().selectNode(target)}
+                className="rounded px-0.5 text-sky-300/70 transition hover:bg-sky-400/10 hover:text-sky-200"
+              >
+                {s.label}
+              </button>
+            )}
+          </span>
+        );
+      })}
+    </nav>
+  );
 }
 
 export function AiPanel() {
@@ -49,6 +88,13 @@ export function AiPanel() {
       .map(([name, v]) => ({ name, ...v }));
     return { totalSize, langs };
   }, [graph, selected]);
+
+  // 行星展开状态与剩余可展开数
+  const expanded = useMemo(
+    () => !!graph?.nodes.some((n) => n.expanded && n.id.startsWith(`${selected?.id ?? '\0'}/`)),
+    [graph, selected],
+  );
+  const overflowLeft = selected?.type === 'planet' && !expanded ? (graph?.overflowFiles[selected.id]?.length ?? 0) : 0;
 
   // 打字机 stick-to-bottom：仅当用户本来就在底部附近（40px）时跟随滚动，手动上翻不打扰
   useEffect(() => {
@@ -116,7 +162,7 @@ export function AiPanel() {
               {selected.type === 'moon' ? '卫星 · 文件' : selected.type === 'planet' ? '行星 · 目录' : '恒星 · 仓库'}
             </p>
             <h2 className="mt-0.5 break-all text-base font-semibold text-white">{selected.name}</h2>
-            <p className="mt-0.5 break-all text-xs text-white/45">{selected.id}</p>
+            <Breadcrumb node={selected} />
           </div>
         </div>
         <button onClick={() => useGalaxy.getState().selectNode(null)} className="rounded-md border border-white/15 px-2 py-0.5 text-xs text-white/60 transition hover:border-white/40 hover:text-white">关闭</button>
@@ -140,6 +186,14 @@ export function AiPanel() {
             </dd>
           </div>
         </dl>
+      )}
+      {selected.type === 'planet' && (expanded || overflowLeft > 0) && (
+        <button
+          onClick={() => (expanded ? useGalaxy.getState().collapseDir(selected.id) : useGalaxy.getState().expandDir(selected.id))}
+          className="mt-2 w-full rounded-lg border border-violet-400/30 bg-violet-500/10 px-3 py-1.5 text-xs text-violet-200 transition hover:border-violet-400/60 hover:bg-violet-500/20"
+        >
+          {expanded ? '⊖ 收起展开的卫星' : `⊕ 展开 ${overflowLeft} 个聚合文件为卫星`}
+        </button>
       )}
       {selected.type === 'star' && (
         <p className="mt-4 text-xs leading-relaxed text-white/70">仓库核心。点击行星查看目录统计，点击卫星召唤 AI 分析。</p>

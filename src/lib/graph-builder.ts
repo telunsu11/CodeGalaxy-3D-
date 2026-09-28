@@ -121,10 +121,16 @@ export function buildGraph(entries: TreeEntry[], repoKey: string): GraphData {
 
   // moon：每目录取 top-K。深度取父目录段数、下限 1（第 0 层是 star，根文件落在第 1 层，
   // 子目录文件与其所属 planet 同层），与 forceRadial 分层布局对齐。
+  // 落选文件保留在 overflowFiles（行星展开的数据源），单目录上限 500 防极端仓库内存膨胀。
+  const overflowFiles: GraphData['overflowFiles'] = {};
   for (const [dir, list] of byDir) {
     for (const b of list.slice(0, k)) {
       nodes.push(mk(b.path, 'moon', Math.max(1, depthOf(dir)), b.size ?? 0));
       links.push({ source: dir === '' ? starId : dir, target: b.path });
+    }
+    const rest = list.slice(k, k + 500);
+    if (rest.length > 0) {
+      overflowFiles[dir] = rest.map((b) => ({ path: b.path, size: b.size ?? 0 }));
     }
   }
 
@@ -135,5 +141,5 @@ export function buildGraph(entries: TreeEntry[], repoKey: string): GraphData {
     }
   }
 
-  return { nodes, links, truncated: false };
+  return { nodes, links, truncated: false, overflowFiles };
 }

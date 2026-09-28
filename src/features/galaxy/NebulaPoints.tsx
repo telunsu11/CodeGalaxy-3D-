@@ -22,9 +22,13 @@ export function NebulaPoints() {
   const geometry = useMemo(() => {
     // ready 门控：layout 前坐标全零，粒子会坍缩成原点一团（与 CelestialBodies 同理）
     if (!graph || status !== 'ready') return null;
+    // 已展开的行星：聚合文件已化作真实卫星，星云粒子退场
+    const expandedDirs = new Set(
+      graph.nodes.filter((n) => n.expanded).map((n) => n.id.slice(0, n.id.lastIndexOf('/'))),
+    );
     const arr: number[] = [];
     for (const n of graph.nodes) {
-      if (n.type !== 'planet' || n.overflowCount <= 0) continue;
+      if (n.type !== 'planet' || n.overflowCount <= 0 || expandedDirs.has(n.id)) continue;
       const count = Math.min(MAX_PER_PLANET, n.overflowCount);
       // seed = id.length * 7919 + overflowCount 恒 > 0（id 非空、本分支 overflow > 0），不会退化成 0
       const r = rand(n.id.length * 7919 + n.overflowCount);

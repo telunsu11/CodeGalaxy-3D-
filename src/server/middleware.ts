@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable, pipeline } from 'node:stream';
 import { fetchRawFile, fetchRepo, GithubError } from './github';
 import { scanRepo, llmChatStream, AiError } from './ai';
+import { fetchDeps } from './deps';
 import { SUMMARIZE_SYSTEM, summarizeUser } from './prompts';
 
 function json(res: ServerResponse, status: number, body: unknown) {
@@ -58,6 +59,17 @@ export function apiPlugin(): Plugin {
           const owner = q.get('owner'), repo = q.get('repo'), branch = q.get('branch'), path = q.get('path');
           if (!owner || !repo || !branch || !path) return json(res, 400, { error: '缺少参数' });
           json(res, 200, await fetchRawFile(owner, repo, branch, path));
+        } catch (e) {
+          jsonGithubError(res, e);
+        }
+      });
+
+      server.middlewares.use('/api/deps', async (req, res) => {
+        try {
+          const q = query(req);
+          const owner = q.get('owner'), repo = q.get('repo'), branch = q.get('branch');
+          if (!owner || !repo || !branch) return json(res, 400, { error: '缺少参数' });
+          json(res, 200, await fetchDeps(owner, repo, branch));
         } catch (e) {
           jsonGithubError(res, e);
         }

@@ -22,6 +22,7 @@ export interface GalaxyNode {
   x: number;
   y: number;
   z: number;
+  expanded?: boolean; // 行星展开时动态加入的节点标记（收起时按此过滤）
 }
 
 export interface GalaxyLink {
@@ -33,6 +34,8 @@ export interface GraphData {
   nodes: GalaxyNode[];
   links: GalaxyLink[];
   truncated: boolean; // GitHub 树是否被截断
+  /** 每目录因 top-K 被聚合掉的文件（行星展开的数据源） */
+  overflowFiles: Record<string, Array<{ path: string; size: number }>>;
 }
 
 export interface RepoMeta {

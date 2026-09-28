@@ -25,15 +25,37 @@ export function SearchPanel() {
   const searchQuery = useGalaxy((s) => s.searchQuery);
   const setSearchQuery = useGalaxy((s) => s.setSearchQuery);
   const [text, setText] = useState('');
+  const [active, setActive] = useState(-1); // 键盘选中项（↑↓ 移动，Enter 聚焦）
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   // 本地输入即时回显，写 store 做 150ms 防抖（store 变化触发 3D 高亮重算）
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>( null);
   const onInput = (v: string) => {
     setText(v);
+    setActive(-1);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setSearchQuery(v), 150);
   };
+
+  const results = useMemo(() => searchNodes(graph?.nodes ?? [], searchQuery), [graph, searchQuery]);
+
+  const pick = (n: GalaxyNode) => {
+    useGalaxy.getState().selectNode(n);
+    inputRef.current?.blur();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (results.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, results.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); pick(results[active]); }
+  };
+
+  // 键盘选中项滚动跟随
+  useEffect(() => {
+    listRef.current?.querySelector(`li:nth-child(${active + 1}) button`)?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
 
   // 换仓库时搜索状态随之清空（store 的 searchQuery 由 loadRepo 重置，这里同步本地输入框）
   useEffect(() => {
@@ -53,8 +75,6 @@ export function SearchPanel() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const results = useMemo(() => searchNodes(graph?.nodes ?? [], searchQuery), [graph, searchQuery]);
-
   if (!graph || status !== 'ready') return null;
 
   return (
@@ -69,7 +89,8 @@ export function SearchPanel() {
             ref={inputRef}
             value={text}
             onChange={(e) => onInput(e.target.value)}
-            placeholder="搜索文件或目录…  按 / 聚焦"
+            onKeyDown={onKeyDown}
+            placeholder="搜索文件或目录…  按 / 聚焦，↑↓ 选择"
             className="min-w-0 flex-1 bg-transparent font-mono text-sm text-white placeholder:text-white/30 focus:outline-none"
           />
           {text && (
@@ -83,16 +104,16 @@ export function SearchPanel() {
             <p className="px-3.5 pt-2 pb-1 text-[10px] uppercase tracking-widest text-white/35">
               {results.length > 0 ? `${results.length} 个匹配${results.length >= 30 ? '（仅显示前 30）' : ''}` : '无匹配'}
             </p>
-            <ul className="max-h-64 overflow-y-auto pb-1.5">
-              {results.map((n) => (
+            <ul ref={listRef} className="max-h-64 overflow-y-auto pb-1.5">
+              {results.map((n, i) => (
                 <li key={n.id}>
                   <button
-                    onClick={() => useGalaxy.getState().selectNode(n)}
-                    className="group flex w-full items-center gap-2 px-3.5 py-1.5 text-left transition hover:bg-white/5"
+                    onClick={() => pick(n)}
+                    className={`group flex w-full items-center gap-2 px-3.5 py-1.5 text-left transition ${active === i ? 'bg-sky-400/15' : 'hover:bg-white/5'}`}
                   >
                     <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: n.langColor }} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-mono text-xs text-white/90 group-hover:text-white">{n.name}</span>
+                      <span className={`block truncate font-mono text-xs ${active === i ? 'text-white' : 'text-white/90 group-hover:text-white'}`}>{n.name}</span>
                       <span className="block truncate font-mono text-[10px] text-white/30">{n.id}</span>
                     </span>
                     <span className="shrink-0 text-[10px] text-white/25">

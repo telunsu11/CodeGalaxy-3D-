@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { GalaxyNode, GraphData, RepoApiResponse, ScanProgress, ScanResponse } from '../lib/types';
 import { buildGraph } from '../lib/graph-builder';
+import { colorForPath } from '../lib/lang-color';
 import { readSseEvents } from '../features/ai-panel/sse';
 
 export type LoadStatus = 'idle' | 'loading' | 'layout' | 'ready' | 'error';
@@ -18,15 +19,20 @@ interface GalaxyState {
   focus: { id: string; ts: number } | null; // FocusController 监听 ts 变化
   comets: Array<{ from: string; to: string }>;
   scan: (ScanResponse & { running: boolean; progress: ScanProgress | null }) | null;
+  /** 依赖全景：null=关闭；loading=解析中；edges=两端都在图中的依赖连线 */
+  deps: { loading: boolean; edges: Array<{ from: string; to: string }> } | null;
 
   loadRepo(owner: string, repo: string): Promise<void>;
   applyLayout(coords: Array<{ id: string; x: number; y: number; z: number }>): void;
   selectNode(node: GalaxyNode | null): void;
   hoverNode(node: GalaxyNode | null): void;
   setSearchQuery(q: string): void;
+  expandDir(dir: string): void;
+  collapseDir(dir: string): void;
   setComets(comets: Array<{ from: string; to: string }>): void;
   runScan(): Promise<void>;
   clearScan(): void;
+  toggleDeps(): Promise<void>;
 }
 
 export function parseRepoInput(input: string): { owner: string; repo: string } | null {
@@ -56,10 +62,11 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
   focus: null,
   comets: [],
   scan: null,
+  deps: null,
 
   async loadRepo(owner, repo) {
     const seq = ++loadSeq;
-    set({ status: 'loading', error: null, graph: null, selected: null, hovered: null, comets: [], scan: null, searchQuery: '', layoutProgress: 0 });
+    set({ status: 'loading', error: null, graph: null, selected: null, hovered: null, comets: [], scan: null, deps: null, searchQuery: '', layoutProgress: 0 });
     if (cometTimer) { clearTimeout(cometTimer); cometTimer = null; } // 上一仓库的流光清理定时器一并作废
     try {
       const res = await fetch(`/api/repo?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`);
@@ -97,6 +104,50 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
   setSearchQuery(q) {
     if (get().searchQuery === q) return;
     set({ searchQuery: q });
+  },
+
+  expandDir(dir) {
+    const g = get().graph;
+    if (!g) return;
+    const planet = g.nodes.find((n) => n.id === dir && n.type === 'planet');
+    const files = g.overflowFiles[dir];
+    if (!planet || !files || files.length === 0) return;
+    if (g.nodes.some((n) => n.expanded && n.id.startsWith(`${dir}/`))) return; // 已展开
+    // 局部球壳布局：绕行星分布（无需重跑全局力导向，它们本就属于该行星邻域）
+    let seed = dir.length * 7919 + files.length;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+    const newNodes = files.map((f) => {
+      const theta = rnd() * Math.PI * 2;
+      const phi = Math.acos(2 * rnd() - 1);
+      const r = 8 + rnd() * 12;
+      return {
+        id: f.path,
+        name: f.path.split('/').pop()!,
+        type: 'moon' as const,
+        depth: planet.depth + 1,
+        size: f.size,
+        langColor: colorForPath(f.path),
+        childCount: 0,
+        overflowCount: 0,
+        x: planet.x + r * Math.sin(phi) * Math.cos(theta),
+        y: planet.y + r * Math.cos(phi) * 0.7,
+        z: planet.z + r * Math.sin(phi) * Math.sin(theta),
+        expanded: true,
+      };
+    });
+    const newLinks = newNodes.map((n) => ({ source: dir, target: n.id }));
+    set({ graph: { ...g, nodes: [...g.nodes, ...newNodes], links: [...g.links, ...newLinks] } });
+  },
+
+  collapseDir(dir) {
+    const g = get().graph;
+    if (!g) return;
+    const prefix = `${dir}/`;
+    const nodes = g.nodes.filter((n) => !(n.expanded && n.id.startsWith(prefix)));
+    if (nodes.length === g.nodes.length) return; // 未展开
+    const removed = new Set(g.nodes.filter((n) => n.expanded && n.id.startsWith(prefix)).map((n) => n.id));
+    const links = g.links.filter((l) => !removed.has(l.source) && !removed.has(l.target));
+    set({ graph: { ...g, nodes, links } });
   },
 
   setComets(comets) {
@@ -143,5 +194,27 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
 
   clearScan() {
     set({ scan: null });
+  },
+
+  async toggleDeps() {
+    const { meta, graph, deps } = get();
+    if (!meta || !graph) return;
+    if (deps?.loading) return; // 防重入
+    if (deps) { set({ deps: null }); return; } // 已开启 → 关闭
+    set({ deps: { loading: true, edges: [] } });
+    try {
+      const res = await fetch(`/api/deps?owner=${encodeURIComponent(meta.owner)}&repo=${encodeURIComponent(meta.repo)}&branch=${encodeURIComponent(meta.branch)}`);
+      const data = await res.json() as { edges?: Array<{ from: string; to: string }>; error?: string };
+      if (!res.ok) throw new Error(data.error ?? '依赖解析失败');
+      if (get().meta !== meta) return; // 换仓库丢弃
+      // 只画两端都是图中卫星的边（依赖是文件→文件；目录节点不算）
+      const moonIds = new Set(graph.nodes.filter((n) => n.type === 'moon').map((n) => n.id));
+      const edges = (data.edges ?? []).filter((e) => moonIds.has(e.from) && moonIds.has(e.to));
+      set({ deps: { loading: false, edges } });
+    } catch (e) {
+      if (get().meta !== meta) return;
+      set({ deps: null });
+      set({ error: (e as Error).message });
+    }
   },
 }));
