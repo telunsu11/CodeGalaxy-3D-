@@ -32,6 +32,11 @@ export function parseRepoInput(input: string): { owner: string; repo: string } |
   return short ? { owner: short[1], repo: short[2] } : null;
 }
 
+/** loadRepo 竞态守卫：每次调用自增，await 返回后 seq 过期则丢弃结果 */
+let loadSeq = 0;
+/** setComets 自动清理定时器（重复调用时先清旧定时器） */
+let cometTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const useGalaxy = create<GalaxyState>((set, get) => ({
   status: 'idle',
   error: null,
@@ -44,13 +49,17 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
   scan: null,
 
   async loadRepo(owner, repo) {
+    const seq = ++loadSeq;
     set({ status: 'loading', error: null, graph: null, selected: null, comets: [], scan: null });
+    if (cometTimer) { clearTimeout(cometTimer); cometTimer = null; } // 上一仓库的流光清理定时器一并作废
     try {
       const res = await fetch(`/api/repo?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`);
       const data = await res.json() as RepoApiResponse & { error?: string };
       if (!res.ok) throw new Error(data.error ?? `加载失败（${res.status}）`);
+      if (seq !== loadSeq) return; // 期间用户又发起了新加载，丢弃本次结果
       set({ meta: data.meta, graph: buildGraph(data.entries, `${owner}/${repo}`), truncated: data.truncated, status: 'layout' });
     } catch (e) {
+      if (seq !== loadSeq) return;
       set({ status: 'error', error: (e as Error).message });
     }
   },
@@ -59,11 +68,11 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
     const g = get().graph;
     if (!g) return;
     const byId = new Map(coords.map((c) => [c.id, c]));
-    for (const n of g.nodes) {
+    const nodes = g.nodes.map((n) => {
       const c = byId.get(n.id);
-      if (c) { n.x = c.x; n.y = c.y; n.z = c.z; }
-    }
-    set({ graph: { ...g }, status: 'ready' });
+      return c ? { ...n, x: c.x, y: c.y, z: c.z } : n;
+    });
+    set({ graph: { ...g, nodes }, status: 'ready' });
   },
 
   selectNode(node) {
@@ -72,7 +81,10 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
 
   setComets(comets) {
     set({ comets });
-    if (comets.length > 0) setTimeout(() => set({ comets: [] }), 3200);
+    if (cometTimer) clearTimeout(cometTimer);
+    cometTimer = comets.length > 0
+      ? setTimeout(() => { set({ comets: [] }); cometTimer = null; }, 3200)
+      : null;
   },
 
   async runScan() {
@@ -87,9 +99,12 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
       });
       const data = await res.json() as ScanResponse & { error?: string };
       if (!res.ok) throw new Error(data.error ?? '扫描失败');
+      if (get().meta !== meta) return; // 扫描期间换了仓库，旧结果丢弃
       set({ scan: { ...data, running: false } });
     } catch (e) {
-      set({ scan: { verdicts: [], degraded: true, running: false } });
+      if (get().meta !== meta) return;
+      // degraded 语义留给服务端降级响应；请求失败只清空扫描态并报错
+      set({ scan: null });
       set({ error: (e as Error).message });
     }
   },
