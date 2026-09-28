@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { Billboard, Text } from '@react-three/drei';
 import { useGalaxy } from '../../app/store';
 import type { GalaxyNode } from '../../lib/types';
 import { BLACK_HOLE_SCORE_MAX } from '../../lib/types';
@@ -9,6 +9,35 @@ import { BlackHoles } from './BlackHole';
 
 export function starRadius(childCount: number): number {
   return Math.max(3, Math.min(13, 2.2 + Math.log2(childCount + 1) * 1.8));
+}
+
+/** 本地字体（troika SDF 文字；不传 font 会走 gstatic CDN，国内不稳） */
+const LABEL_FONT = '/fonts/roboto.woff';
+
+/**
+ * 天体名称标签（GPU 渲染，所有行星 + 恒星常显）：
+ * 字号用世界单位直接跟随天体半径——大目录大字、小目录小字，
+ * 相机拉远时自然透视缩小，形成无需计算的层级 LOD。
+ */
+function BodyLabel({ text, size, color = '#c9d6f0', y = 0 }: { text: string; size: number; color?: string; y?: number }) {
+  return (
+    <Billboard position={[0, y, 0]}>
+      <Text
+        font={LABEL_FONT}
+        fontSize={size}
+        color={color}
+        anchorX="center"
+        anchorY="bottom"
+        outlineWidth={size * 0.08}
+        outlineColor="#03040a"
+        material-depthTest={false}
+        material-depthWrite={false}
+        renderOrder={999}
+      >
+        {text}
+      </Text>
+    </Billboard>
+  );
 }
 
 /** 悬停事件公共处理器：进/出天体时更新 tooltip 状态 */
@@ -42,14 +71,15 @@ function StarBody({ node }: { node: GalaxyNode }) {
         <sphereGeometry args={[17.5, 32, 32]} />
         <meshBasicMaterial color={color} transparent opacity={0.14} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      <Html center distanceFactor={300} position={[0, 20, 0]} className="pointer-events-none select-none" zIndexRange={[10, 0]}>
-        <div className="whitespace-nowrap font-mono text-sm font-semibold text-amber-200/90 drop-shadow-[0_0_6px_rgba(0,0,0,0.9)]">{node.name}</div>
-      </Html>
+      <BodyLabel text={node.name} size={5} color="#ffd28a" y={20} />
     </group>
   );
 }
 
 function PlanetBody({ node, matched }: { node: GalaxyNode; matched: boolean }) {
+  const r = starRadius(node.childCount) * (matched ? 1.3 : 1);
+  // 字号跟随行星半径（世界单位）：3~13 半径 → 1.7~7.2 字号
+  const fontSize = Math.max(1.7, r * 0.55);
   return (
     <group position={[node.x, node.y, node.z]}>
       <mesh
@@ -66,14 +96,8 @@ function PlanetBody({ node, matched }: { node: GalaxyNode; matched: boolean }) {
           emissiveIntensity={matched ? 1.8 : 0.5}
         />
       </mesh>
-      {/* 一级目录常显标签（数量少），深层目录靠悬停 tooltip */}
-      {node.depth === 1 && (
-        <Html center distanceFactor={260} position={[0, starRadius(node.childCount) * (matched ? 1.3 : 1) + 5, 0]} className="pointer-events-none select-none" zIndexRange={[10, 0]}>
-          <div className={`whitespace-nowrap rounded px-1.5 py-0.5 font-mono text-[11px] backdrop-blur-[2px] ${matched ? 'bg-sky-500/40 text-white ring-1 ring-sky-300/50' : 'bg-black/45 text-white/75'}`}>
-            {node.name} <span className="text-white/35">{node.childCount}</span>
-          </div>
-        </Html>
-      )}
+      {/* 所有目录行星常显名称（大小随行星缩放，远处自然缩小） */}
+      <BodyLabel text={node.name} size={fontSize} color={matched ? '#9ecbff' : '#c9d6f0'} y={r + fontSize * 0.35} />
     </group>
   );
 }
