@@ -12,15 +12,23 @@ export function AiPanel() {
   const setComets = useGalaxy((s) => s.setComets);
   const [ai, setAi] = useState<AiState>({ phase: 'idle', text: '' });
   const seqRef = useRef(0);
+  const preRef = useRef<HTMLPreElement>(null);
+
+  // 打字机 stick-to-bottom：仅当用户本来就在底部附近（40px）时跟随滚动，手动上翻不打扰
+  useEffect(() => {
+    const el = preRef.current;
+    if (el && el.scrollTop + el.clientHeight >= el.scrollHeight - 40) el.scrollTop = el.scrollHeight;
+  }, [ai.text]);
 
   useEffect(() => {
+    const seq = ++seqRef.current; // 每次运行都自增（含取消选中/切行星）：在途请求全部失去写入资格
     if (!selected || !meta) { setAi({ phase: 'idle', text: '' }); return; }
     if (selected.type !== 'moon') return; // planet 统计直接渲染，不走 AI
-    const seq = ++seqRef.current;
+    const controller = new AbortController();
     setAi({ phase: 'loading-code', text: '' });
     (async () => {
       try {
-        const fileRes = await fetch(`/api/file?owner=${meta.owner}&repo=${meta.repo}&branch=${meta.branch}&path=${encodeURIComponent(selected.id)}`);
+        const fileRes = await fetch(`/api/file?owner=${meta.owner}&repo=${meta.repo}&branch=${meta.branch}&path=${encodeURIComponent(selected.id)}`, { signal: controller.signal });
         const file = await fileRes.json() as { content?: string; truncated?: boolean; error?: string };
         if (seq !== seqRef.current) return;
         if (!fileRes.ok || file.content == null) throw new Error(file.error ?? '无法获取源码');
@@ -39,6 +47,7 @@ export function AiPanel() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: selected.id, repoKey: `${meta.owner}/${meta.repo}`, code: file.content }),
+          signal: controller.signal,
         });
         if (seq !== seqRef.current) return;
         if (sumRes.status === 501) { setAi({ phase: 'error', text: '', error: '未配置 ZHIPU_API_KEY，AI 分析不可用' }); return; }
@@ -50,9 +59,11 @@ export function AiPanel() {
         if (seq !== seqRef.current) return;
         setAi((s) => ({ ...s, phase: 'done' }));
       } catch (e) {
+        // abort（切换选中/卸载）抛 AbortError 进这里，但此时 seq 必已过期（cleanup 先于新 effect 运行），静默丢弃
         if (seq === seqRef.current) setAi({ phase: 'error', text: '', error: (e as Error).message });
       }
     })();
+    return () => controller.abort(); // 快速连点/关闭面板：掐断在途 /api/file 与 GLM 流式补全
   }, [selected, meta, graph, setComets]);
 
   if (!selected) return null;
@@ -88,7 +99,7 @@ export function AiPanel() {
             {ai.phase === 'streaming' && <span className="animate-pulse text-sky-300">AI 分析中…</span>}
           </div>
           {ai.error && <p className="mt-2 text-xs text-rose-400">{ai.error}</p>}
-          {ai.text && <pre className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-emerald-100/90">{ai.text}</pre>}
+          {ai.text && <pre ref={preRef} className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-emerald-100/90">{ai.text}</pre>}
         </div>
       )}
     </aside>
