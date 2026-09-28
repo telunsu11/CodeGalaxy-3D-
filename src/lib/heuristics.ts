@@ -11,10 +11,10 @@ const SMELL_RULES: Array<{ re: RegExp; weight: number; max: number; label: (n: n
   { re: /catch\s*(\([^)]*\))?\s*\{\s*\}/g, weight: 6, max: 18, label: (n) => `${n} 处空 catch` },
   { re: /@ts-(ignore|nocheck|expect-error)/g, weight: 4, max: 12, label: (n) => `${n} 处 ts 抑制注释` },
   { re: /\beval\s*\(/g, weight: 10, max: 10, label: (n) => `${n} 处 eval` },
-  { re: /innerHTML\s*=/g, weight: 5, max: 10, label: (n) => `${n} 处 innerHTML 赋值` },
+  { re: /innerHTML\s*=(?!=)/g, weight: 5, max: 10, label: (n) => `${n} 处 innerHTML 赋值` },
 ];
 
-export function heuristicScore(content: string, _path: string): HeuristicResult {
+export function heuristicScore(content: string): HeuristicResult {
   const signals: string[] = [];
   let score = 0;
   const lines = content.split('\n');

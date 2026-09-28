@@ -86,7 +86,7 @@ export async function scanRepo(owner: string, repo: string, branch: string): Pro
   const files = contents.flatMap((r) => (r.ok ? [r.value] : []));
 
   const ranked = files
-    .map((f) => ({ ...f, heuristics: heuristicScore(f.content, f.path) }))
+    .map((f) => ({ ...f, heuristics: heuristicScore(f.content) }))
     .sort((a, b) => b.heuristics.score - a.heuristics.score)
     .slice(0, SCAN_AI_TOP);
 
