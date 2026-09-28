@@ -33,6 +33,33 @@ describe('zhipuChat', () => {
     const r = await zhipuChat([{ role: 'user', content: 'x' }], { json: true });
     expect(r).toMatchObject({ score: 2 });
   });
+  it('GLM fetch 携带 30s 超时 signal', async () => {
+    process.env.ZHIPU_API_KEY = 'k';
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) => OK_JSON);
+    vi.stubGlobal('fetch', spy);
+    await zhipuChat([{ role: 'user', content: 'hi' }]);
+    const init = spy.mock.calls[0]![1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+  it('GLM 返回 200 但 body 为 HTML 时抛 AiError(provider)', async () => {
+    process.env.ZHIPU_API_KEY = 'k';
+    const HTML = '<html><body>502 Bad Gateway</body></html>';
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => JSON.parse(HTML) } as unknown as Response)));
+    await expect(zhipuChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
+  });
+  it('score 为非数字字符串时抛 AiError(provider)', async () => {
+    process.env.ZHIPU_API_KEY = 'k';
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      JSON_RESP({ choices: [{ message: { content: '{"score": "abc", "reason": "x"}' } }] })));
+    await expect(zhipuChat([{ role: 'user', content: 'x' }], { json: true })).rejects.toMatchObject({ code: 'provider' });
+  });
+  it('score 超出 1-10 时钳位到边界', async () => {
+    process.env.ZHIPU_API_KEY = 'k';
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      JSON_RESP({ choices: [{ message: { content: '{"score": 15, "reason": "还行"}' } }] })));
+    const r = await zhipuChat([{ role: 'user', content: 'x' }], { json: true });
+    expect(r).toMatchObject({ score: 10 });
+  });
 });
 
 describe('zhipuChatStream', () => {
@@ -50,6 +77,17 @@ describe('zhipuChatStream', () => {
     const stream = await zhipuChatStream([{ role: 'user', content: 'hi' }]);
     const text = await new Response(stream).text();
     expect(text).toContain('data: {"choices"');
+  });
+  it('GLM 流式 fetch 携带 30s 超时 signal', async () => {
+    process.env.ZHIPU_API_KEY = 'k';
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      body: new ReadableStream({ start(c) { c.close(); } }),
+    }) as Response);
+    vi.stubGlobal('fetch', spy);
+    await zhipuChatStream([{ role: 'user', content: 'hi' }]);
+    const init = spy.mock.calls[0]![1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 });
 
@@ -71,5 +109,56 @@ describe('scanRepo 降级', () => {
     expect(r.degraded).toBe(true);
     expect(r.verdicts.length).toBeGreaterThan(0);
     expect(call).toBeGreaterThan(0);
+  });
+
+  it('成功路径：GLM 逐文件返回结论，.md 不参与', async () => {
+    process.env.ZHIPU_API_KEY = 'k';
+    __clearRepoCache();
+    const SCORES: Record<string, number> = { 'a.ts': 2, 'b.ts': 3, 'c.js': 4 };
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('git/trees')) return JSON_RESP({
+        truncated: false,
+        tree: [
+          { path: 'a.ts', type: 'blob', size: 5000 },
+          { path: 'b.ts', type: 'blob', size: 4000 },
+          { path: 'c.js', type: 'blob', size: 3000 },
+          { path: 'readme.md', type: 'blob', size: 9000 }, // 不在 CODE_EXT，须被过滤
+          { path: 'src', type: 'tree' },
+        ],
+      });
+      if (url.includes('raw.githubusercontent')) return TEXT_RESP('// TODO: fix\n'.repeat(10));
+      if (url.includes('api.github.com/repos/')) return JSON_RESP({ default_branch: 'main', stargazers_count: 0, description: '', language: null });
+      // GLM：按请求体中的文件路径返回各自 score/reason
+      const body = JSON.parse((init as RequestInit).body as string) as { messages: Array<{ role: string; content: string }> };
+      const path = body.messages.find((m) => m.role === 'user')!.content.match(/文件路径：(\S+)/)![1];
+      return JSON_RESP({ choices: [{ message: { content: `{"score": ${SCORES[path]}, "reason": "GLM-${path}-劣质"}` } }] });
+    }));
+    const r = await scanRepo('o', 'ok', 'main');
+    expect(r.degraded).toBe(false);
+    expect(r.verdicts.length).toBe(3); // 3 个代码文件，top-8 截断不越
+    const byPath = new Map(r.verdicts.map((v) => [v.path, v]));
+    expect([...byPath.keys()].sort()).toEqual(['a.ts', 'b.ts', 'c.js']);
+    expect(byPath.get('a.ts')).toMatchObject({ score: 2, reason: 'GLM-a.ts-劣质' });
+    expect(byPath.get('b.ts')).toMatchObject({ score: 3, reason: 'GLM-b.ts-劣质' });
+    expect(byPath.get('c.js')).toMatchObject({ score: 4, reason: 'GLM-c.js-劣质' });
+  });
+
+  it('全零短路：内容干净时 verdicts 为空且 GLM 零调用', async () => {
+    process.env.ZHIPU_API_KEY = 'k';
+    __clearRepoCache();
+    let glmCalls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('git/trees')) return JSON_RESP({
+        truncated: false,
+        tree: [{ path: 'clean-a.ts', type: 'blob', size: 100 }, { path: 'clean-b.ts', type: 'blob', size: 90 }],
+      });
+      if (url.includes('raw.githubusercontent')) return TEXT_RESP('const answer = 42;\n');
+      if (url.includes('api.github.com/repos/')) return JSON_RESP({ default_branch: 'main', stargazers_count: 0, description: '', language: null });
+      glmCalls++;
+      return OK_JSON;
+    }));
+    const r = await scanRepo('o', 'clean', 'main');
+    expect(r).toEqual({ verdicts: [], degraded: false });
+    expect(glmCalls).toBe(0);
   });
 });

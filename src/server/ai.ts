@@ -5,6 +5,7 @@ import { SCAN_SYSTEM, scanUser } from './prompts';
 
 const ZHIPU_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 const MODEL = () => process.env.ZHIPU_MODEL ?? 'glm-4.7';
+const GLM_TIMEOUT = 30_000;
 
 export class AiError extends Error {
   code: 'no_key' | 'provider';
@@ -18,6 +19,7 @@ export async function zhipuChat(messages: ChatMessage[], opts: { system?: string
   const res = await fetch(ZHIPU_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.ZHIPU_API_KEY}` },
+    signal: AbortSignal.timeout(GLM_TIMEOUT),
     body: JSON.stringify({
       model: MODEL(),
       messages: opts.system ? [{ role: 'system', content: opts.system }, ...messages] : messages,
@@ -26,13 +28,25 @@ export async function zhipuChat(messages: ChatMessage[], opts: { system?: string
     }),
   }).catch(() => null);
   if (!res || !res.ok) throw new AiError('provider', `GLM 调用失败（${res?.status ?? 'network'}）`);
-  const data = await res.json() as { choices: Array<{ message: { content: string } }> };
+  let data: { choices: Array<{ message: { content: string } }> };
+  try {
+    data = await res.json() as typeof data;
+  } catch {
+    throw new AiError('provider', 'GLM 返回非 JSON 响应');
+  }
   const content = data.choices?.[0]?.message?.content ?? '';
   if (!opts.json) return content;
   const m = content.match(/\{[\s\S]*\}/);
   if (!m) throw new AiError('provider', `GLM 返回非 JSON：${content.slice(0, 80)}`);
-  const parsed = JSON.parse(m[0]) as { score: number; reason: string };
-  return { score: Math.round(parsed.score), reason: String(parsed.reason).slice(0, 60) };
+  let parsed: { score: number; reason: string };
+  try {
+    parsed = JSON.parse(m[0]) as typeof parsed;
+  } catch {
+    throw new AiError('provider', `GLM 返回非 JSON：${content.slice(0, 80)}`);
+  }
+  const score = Number(parsed.score);
+  if (Number.isNaN(score)) throw new AiError('provider', 'GLM 返回 score 非法');
+  return { score: Math.min(10, Math.max(1, Math.round(score))), reason: String(parsed.reason).slice(0, 60) };
 }
 
 export async function zhipuChatStream(messages: ChatMessage[], opts: { system?: string } = {}): Promise<ReadableStream<Uint8Array>> {
@@ -40,6 +54,7 @@ export async function zhipuChatStream(messages: ChatMessage[], opts: { system?: 
   const res = await fetch(ZHIPU_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.ZHIPU_API_KEY}` },
+    signal: AbortSignal.timeout(GLM_TIMEOUT),
     body: JSON.stringify({
       model: MODEL(),
       stream: true,
