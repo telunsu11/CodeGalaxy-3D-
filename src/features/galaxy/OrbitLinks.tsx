@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useGalaxy } from '../../app/store';
 
@@ -31,6 +31,12 @@ export function OrbitLinks() {
     g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     return g;
   }, [graph, selectedId, status]);
+
+  // 泄漏防护：选中变化重建 geometry 时必须显式 dispose 旧的
+  // （R3F 9 对 prop 传入的 geometry 是纯赋值覆盖；three r186 的 bindingStates 按 geometry.id
+  //   强持有 VAO/GL buffer，不 dispose 就是永久 GPU 泄漏。
+  //   不能用 useMemo cleanup——React 有权丢弃 memo 值而不给回调，useEffect 清理才有保证）
+  useEffect(() => () => { geometry?.dispose(); }, [geometry]);
 
   if (!geometry) return null;
   return (

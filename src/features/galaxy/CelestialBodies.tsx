@@ -71,13 +71,17 @@ function MoonInstances({ moons, blackHoles }: { moons: GalaxyNode[]; blackHoles:
 }
 
 export function CelestialBodies() {
-  // 注意：所有 useGalaxy 订阅必须位于提前 return 之前，保证 hooks 顺序稳定
+  // 注意：所有 hooks（useGalaxy 订阅与 useMemo）必须位于提前 return 之前，保证 hooks 顺序稳定
   const graph = useGalaxy((s) => s.graph);
   const status = useGalaxy((s) => s.status);
   const scan = useGalaxy((s) => s.scan);
+  // useMemo 稳定引用：否则每次渲染 new Set/新数组会让 MoonInstances 的 visible 重算、useLayoutEffect 无谓重跑
+  const blackHoles = useMemo(
+    () => new Set((scan?.verdicts ?? []).filter((v) => v.score <= 4).map((v) => v.path)),
+    [scan],
+  );
+  const moons = useMemo(() => (graph?.nodes ?? []).filter((n) => n.type === 'moon'), [graph]);
   if (!graph || status !== 'ready') return null; // 指令 A：layout 阶段坐标全零，ready 前只留星空（跃迁入场）
-  const blackHoles = new Set((scan?.verdicts ?? []).filter((v) => v.score <= 4).map((v) => v.path));
-  const moons = graph.nodes.filter((n) => n.type === 'moon');
   return (
     <group>
       {graph.nodes.filter((n) => n.type === 'star').map((n) => <StarBody key={n.id} node={n} />)}

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useGalaxy } from '../../app/store';
 
@@ -19,7 +19,7 @@ export function NebulaPoints() {
   const graph = useGalaxy((s) => s.graph);
   const status = useGalaxy((s) => s.status);
 
-  const positions = useMemo(() => {
+  const geometry = useMemo(() => {
     // ready 门控：layout 前坐标全零，粒子会坍缩成原点一团（与 CelestialBodies 同理）
     if (!graph || status !== 'ready') return null;
     const arr: number[] = [];
@@ -45,9 +45,12 @@ export function NebulaPoints() {
     return g;
   }, [graph, status]);
 
-  if (!positions) return null;
+  // 泄漏防护：与 OrbitLinks 统一模式，重建/卸载时 dispose 旧 geometry
+  useEffect(() => () => { geometry?.dispose(); }, [geometry]);
+
+  if (!geometry) return null;
   return (
-    <points geometry={positions}>
+    <points geometry={geometry}>
       <pointsMaterial color="#5d6f9f" size={0.55} transparent opacity={0.65} sizeAttenuation depthWrite={false} />
     </points>
   );
