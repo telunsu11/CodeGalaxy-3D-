@@ -14,7 +14,7 @@ export function FocusController() {
   useFrame(() => {
     if (!focus || focus.ts === lastTs.current || !graph || !controls.current) return;
     const node = nodeById(graph, focus.id);
-    if (!node) return;
+    if (!node) { lastTs.current = focus.ts; return; } // 指令 C：找不到也推进 ts，防止每帧重复 O(n) find
     lastTs.current = focus.ts;
     const dist = node.type === 'star' ? 160 : node.type === 'planet' ? 70 : 26;
     const dir = { x: 0.55, y: 0.35, z: 0.75 }; // 斜上方观察角
@@ -24,5 +24,6 @@ export function FocusController() {
     );
   });
 
-  return <CameraControls ref={controls} dampingFactor={0.08} minDistance={8} maxDistance={900} />;
+  // camera-controls 3.x：dampingFactor 已废弃（no-op），平滑度改用 smoothTime（秒）
+  return <CameraControls ref={controls} smoothTime={0.25} minDistance={8} maxDistance={900} />;
 }
