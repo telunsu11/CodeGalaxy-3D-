@@ -22,12 +22,14 @@ export function useLayout() {
 
     const worker = new Worker(new URL('../lib/layout-worker.ts', import.meta.url), { type: 'module' });
     const timer = setTimeout(() => {
+      if (useGalaxy.getState().status !== 'layout') return; // 换仓库瞬间旧 worker 在途消息守卫
       worker.terminate();
       if (latest) applyLayout(latest);
       else fail('布局计算超时，请重试');
     }, 10_000);
 
     worker.onmessage = (e: MessageEvent<LayoutResult>) => {
+      if (useGalaxy.getState().status !== 'layout') return;
       latest = e.data.coords;
       if (e.data.done) {
         clearTimeout(timer);
@@ -37,6 +39,7 @@ export function useLayout() {
     };
 
     worker.onerror = (e: ErrorEvent) => {
+      if (useGalaxy.getState().status !== 'layout') return;
       clearTimeout(timer);
       worker.terminate();
       if (latest) applyLayout(latest);
