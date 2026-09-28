@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useGalaxy } from '../../app/store';
@@ -39,20 +39,21 @@ function MoonInstances({ moons, blackHoles }: { moons: GalaxyNode[]; blackHoles:
   const ref = useRef<THREE.InstancedMesh>(null);
   const visible = useMemo(() => moons.filter((m) => !blackHoles.has(m.id)), [moons, blackHoles]);
   const tmpColor = useRef(new THREE.Color());
+  const tmpMatrix = useRef(new THREE.Matrix4());
 
-  useFrame(() => {
+  // 单次写入：矩阵/颜色只在 visible 变化时重写（不再每帧全量重算）。
+  // R3F 的 ref 在 effect 时已指向当前 mesh 实例；capacity 变化必然伴随 visible 变化，effect 必然重跑。
+  useLayoutEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
-    const m = new THREE.Matrix4();
     visible.forEach((node, i) => {
-      m.makeTranslation(node.x, node.y, node.z);
-      mesh.setMatrixAt(i, m);
+      mesh.setMatrixAt(i, tmpMatrix.current.makeTranslation(node.x, node.y, node.z));
       mesh.setColorAt(i, tmpColor.current.set(node.langColor));
     });
     mesh.count = visible.length;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  });
+  }, [visible]);
 
   const onClick = (e: { stopPropagation: () => void; instanceId: number | null }) => {
     e.stopPropagation();

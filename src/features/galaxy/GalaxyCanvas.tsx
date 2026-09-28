@@ -5,6 +5,8 @@ import { Bloom, EffectComposer } from '@react-three/postprocessing';
 import { useGalaxy } from '../../app/store';
 import { FocusController } from './FocusController';
 import { CelestialBodies } from './CelestialBodies';
+import { OrbitLinks } from './OrbitLinks';
+import { NebulaPoints } from './NebulaPoints';
 
 export function GalaxyCanvas({ children }: { children?: ReactNode }) {
   return (
@@ -28,8 +30,13 @@ export function GalaxyCanvas({ children }: { children?: ReactNode }) {
 }
 
 export function GalaxyStage() {
-  // Task 13 起往 Canvas 内继续挂载 OrbitLinks/NebulaPoints
   const status = useGalaxy((s) => s.status);
   if (status !== 'ready' && status !== 'layout') return null;
-  return <GalaxyCanvas><CelestialBodies /></GalaxyCanvas>;
+  return (
+    <GalaxyCanvas>
+      <CelestialBodies />
+      <OrbitLinks />
+      <NebulaPoints />
+    </GalaxyCanvas>
+  );
 }
