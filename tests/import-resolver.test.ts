@@ -10,7 +10,7 @@ import { external } from 'react';
 `;
 
 describe('extractImportSpecifiers', () => {
-  it('提取 ESM/require/动态 import 三种形态，忽略裸包名', () => {
+  it('提取三种形态与裸包名', () => {
     const specs = extractImportSpecifiers(SRC);
     expect(specs).toContain('./util/helper');
     expect(specs).toContain('../lib/foo');
@@ -32,5 +32,9 @@ describe('resolveToNodeId', () => {
   it('裸包名与未命中返回 null', () => {
     expect(resolveToNodeId('src/a.ts', 'react', ids)).toBeNull();
     expect(resolveToNodeId('src/a.ts', './nope', ids)).toBeNull();
+  });
+  it('bases 顺序锁定：标准路径优先于向上回溯命中', () => {
+    const both = new Set([...ids, 'src/app/util/helper.ts']);
+    expect(resolveToNodeId('src/app/main.tsx', './util/helper', both)).toBe('src/app/util/helper.ts');
   });
 });

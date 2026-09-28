@@ -35,6 +35,8 @@ const CANDIDATES = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '/index.ts
  * 编译器解析；这里采用宽松策略：从导入文件所在目录开始，逐级向上（直到
  * 仓库根）尝试拼接 spec，每级再补全扩展名/index 命中图节点，取最近命中。
  * 裸包名与 URL 直接返回 null（由调用方忽略）。
+ *
+ * 契约：nodeIds 应为文件节点 id 集合（不含目录），否则目录节点会在 '' 后缀候选中遮蔽 index 命中。
  */
 export function resolveToNodeId(fromPath: string, spec: string, nodeIds: Set<string>): string | null {
   if (!spec.startsWith('.') && !spec.startsWith('/')) return null; // 裸包名或 URL，不处理
