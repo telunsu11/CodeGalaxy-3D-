@@ -97,7 +97,7 @@ export function AiPanel() {
   if (!selected) return null;
 
   return (
-    <aside className="pointer-events-auto absolute right-0 top-0 z-20 m-4 w-[22rem] rounded-2xl border border-white/10 bg-[#0a0e1d]/80 p-4 font-mono text-sm text-white/90 shadow-2xl shadow-black/60 backdrop-blur-xl">
+    <aside className="pointer-events-auto relative rounded-2xl border border-white/10 bg-[#0a0e1d]/80 p-4 font-mono text-sm text-white/90 shadow-2xl shadow-black/60 backdrop-blur-xl">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-400/60 to-transparent" />
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-2.5">

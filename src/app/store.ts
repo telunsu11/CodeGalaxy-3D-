@@ -12,6 +12,7 @@ interface GalaxyState {
   truncated: boolean;
   selected: GalaxyNode | null;
   hovered: GalaxyNode | null; // 悬停天体（tooltip 显示）
+  searchQuery: string; // 图内查找：匹配的天体高亮放大
   layoutProgress: number; // 0-1，布局 Worker 增量快照进度
   focus: { id: string; ts: number } | null; // FocusController 监听 ts 变化
   comets: Array<{ from: string; to: string }>;
@@ -21,6 +22,7 @@ interface GalaxyState {
   applyLayout(coords: Array<{ id: string; x: number; y: number; z: number }>): void;
   selectNode(node: GalaxyNode | null): void;
   hoverNode(node: GalaxyNode | null): void;
+  setSearchQuery(q: string): void;
   setComets(comets: Array<{ from: string; to: string }>): void;
   runScan(): Promise<void>;
   clearScan(): void;
@@ -48,6 +50,7 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
   truncated: false,
   selected: null,
   hovered: null,
+  searchQuery: '',
   layoutProgress: 0,
   focus: null,
   comets: [],
@@ -88,6 +91,11 @@ export const useGalaxy = create<GalaxyState>((set, get) => ({
     const { hovered } = get();
     if ((node === null) === (hovered === null) && node?.id === hovered?.id) return; // 同对象去抖
     set({ hovered: node });
+  },
+
+  setSearchQuery(q) {
+    if (get().searchQuery === q) return;
+    set({ searchQuery: q });
   },
 
   setComets(comets) {
